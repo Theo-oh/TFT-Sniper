@@ -1,4 +1,4 @@
-"""键盘监听 — d 键触发识别，Cmd+Shift+R 热重载"""
+"""键盘监听 — Shift+D 触发识别，Cmd+Shift+R 热重载"""
 
 import queue
 import time
@@ -49,12 +49,8 @@ def _on_press(key):
             _reload_cb()
         return
 
-    # 有修饰键时不触发 d
-    if _modifiers:
-        return
-
-    # d 键 → 触发识别
-    if vk == VK_D:
+    # Shift+D → 触发识别；其他带修饰组合不处理
+    if vk == VK_D and _modifiers == {"shift"}:
         now = time.monotonic()
         if now - _last_trigger >= _debounce:
             _last_trigger = now

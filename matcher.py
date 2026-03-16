@@ -9,7 +9,7 @@ def match(slots: list, target_heroes: list, target_costs: list) -> list:
     """
     hits = []
     for i, slot in enumerate(slots):
-        if not slot["name"] and slot["cost"] < 0:
+        if not slot["name"] and slot["cost"] <= 0:
             continue
 
         name_hit = bool(target_heroes) and slot["name"] in target_heroes

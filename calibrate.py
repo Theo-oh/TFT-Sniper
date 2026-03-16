@@ -1,33 +1,64 @@
-"""ROI 坐标校准工具
+"""ROI 与点击点位校准工具
 
 使用方法:
 1. 打开游戏，进入有商店的界面
 2. 运行此脚本: .venv/bin/python calibrate.py
 3. 将鼠标移到商店卡牌行的【左上角】，按空格键记录
 4. 将鼠标移到商店卡牌行的【右下角】，按空格键记录
-5. 脚本会输出 ROI 坐标并自动写入 config.toml
+5. 依次将鼠标移到 5 张卡牌的【点击中心】，每次按空格键记录
+6. 脚本会输出 ROI 坐标和点击点位，并自动写入 config.toml
 """
 
+import os
+import re
 import sys
+import tomllib
 
 print("⏳ 加载模块...", end="", flush=True)
 from pynput import keyboard, mouse
+import window
 print(" ✅")
 
 _mouse_ctrl = mouse.Controller()
 _points = []
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
+_TOTAL_POINTS = 7
+_STEP_HINTS = {
+    0: "👉 将鼠标移到商店卡牌行的【左上角】，按空格键",
+    1: "👉 现在将鼠标移到商店卡牌行的【右下角】，按空格键",
+    2: "👉 现在将鼠标移到【第1张卡】点击中心，按空格键",
+    3: "👉 现在将鼠标移到【第2张卡】点击中心，按空格键",
+    4: "👉 现在将鼠标移到【第3张卡】点击中心，按空格键",
+    5: "👉 现在将鼠标移到【第4张卡】点击中心，按空格键",
+    6: "👉 现在将鼠标移到【第5张卡】点击中心，按空格键",
+}
+
+
+def _print_next_hint():
+    idx = len(_points)
+    if idx < _TOTAL_POINTS:
+        print(_STEP_HINTS[idx])
 
 
 def _on_press(key):
     if key == keyboard.Key.space:
         pos = _mouse_ctrl.position
         _points.append(pos)
+        idx = len(_points)
 
-        if len(_points) == 1:
+        if idx == 1:
             print(f"  ✅ 左上角: ({pos[0]:.0f}, {pos[1]:.0f})")
-            print("👉 现在将鼠标移到商店卡牌行的【右下角】，按空格键")
-        elif len(_points) == 2:
+            _print_next_hint()
+        elif idx == 2:
             print(f"  ✅ 右下角: ({pos[0]:.0f}, {pos[1]:.0f})")
+            _print_next_hint()
+        elif 3 <= idx <= 7:
+            print(f"  ✅ 卡槽{idx - 2}: ({pos[0]:.0f}, {pos[1]:.0f})")
+            if idx >= _TOTAL_POINTS:
+                return False  # 停止监听
+            _print_next_hint()
+
+        if idx >= _TOTAL_POINTS:
             return False  # 停止监听
 
     elif key == keyboard.Key.esc:
@@ -36,19 +67,22 @@ def _on_press(key):
 
 
 def main():
+    with open(CONFIG_PATH, "rb") as f:
+        config = tomllib.load(f)
+
     print()
     print("=" * 40)
-    print("  ROI 坐标校准工具")
+    print("  ROI 与点击点位校准工具")
     print("=" * 40)
     print()
-    print("👉 将鼠标移到商店卡牌行的【左上角】，按空格键")
+    _print_next_hint()
     print("   (按 Esc 取消)")
     print()
 
     with keyboard.Listener(on_press=_on_press) as listener:
         listener.join()
 
-    if len(_points) < 2:
+    if len(_points) < _TOTAL_POINTS:
         return
 
     x1, y1 = _points[0]
@@ -60,33 +94,83 @@ def main():
         "width": int(abs(x2 - x1)),
         "height": int(abs(y2 - y1)),
     }
+    click_y = roi["top"] - roi["height"]
+    slot_points = [{"x": int(x), "y": int(y)} for x, y in _points[2:7]]
+    window_cfg = config.get("window", {})
+    target_window = None
+
+    if window_cfg.get("enabled", False):
+        target_window = window.find_window(window_cfg)
+        if target_window:
+            roi["top"] -= target_window["top"]
+            roi["left"] -= target_window["left"]
+            click_y -= target_window["top"]
+            for point in slot_points:
+                point["x"] -= target_window["left"]
+                point["y"] -= target_window["top"]
+        else:
+            print("⚠️ 未找到目标窗口，将按屏幕绝对坐标写入")
 
     print()
-    print("📐 ROI 坐标 (Point):")
+    if target_window:
+        print("📐 ROI 坐标 (相对窗口 Point):")
+        print(
+            f"   window = {target_window['owner_name']} / {target_window['name']} "
+            f"({target_window['width']}x{target_window['height']})"
+        )
+    else:
+        print("📐 ROI 坐标 (Point):")
     print(f"   top    = {roi['top']}")
     print(f"   left   = {roi['left']}")
     print(f"   width  = {roi['width']}")
     print(f"   height = {roi['height']}")
 
     # 建议 click_y（ROI 上方偏移，卡牌中部）
-    click_y = roi["top"] - roi["height"]
     print(f"   click_y = {click_y}  (建议值，卡牌中部)")
+    print()
+    print("🎯 点击点位:")
+    for i, point in enumerate(slot_points, start=1):
+        print(f"   卡槽{i}: x = {point['x']}, y = {point['y']}")
 
-    # 写入 config.toml
-    import os
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
-
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
-    import re
     content = re.sub(r"^top\s*=\s*\d+", f"top = {roi['top']}", content, flags=re.MULTILINE)
     content = re.sub(r"^left\s*=\s*\d+", f"left = {roi['left']}", content, flags=re.MULTILINE)
     content = re.sub(r"^width\s*=\s*\d+", f"width = {roi['width']}", content, flags=re.MULTILINE)
     content = re.sub(r"^height\s*=\s*\d+", f"height = {roi['height']}", content, flags=re.MULTILINE)
     content = re.sub(r"^click_y\s*=\s*\d+", f"click_y = {click_y}", content, flags=re.MULTILINE)
+    content = re.sub(
+        r"^use_slot_points\s*=\s*(true|false)",
+        "use_slot_points = true",
+        content,
+        flags=re.MULTILINE,
+    )
+    slot_points_block = "slot_points = [\n" + "\n".join(
+        f"  {{ x = {point['x']}, y = {point['y']} }}," for point in slot_points
+    ) + "\n]"
+    content = re.sub(
+        r"^slot_points\s*=\s*\[(?:.|\n)*?\]",
+        slot_points_block,
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if target_window:
+        content = re.sub(
+            r"^reference_width\s*=\s*\d+",
+            f"reference_width = {target_window['width']}",
+            content,
+            flags=re.MULTILINE,
+        )
+        content = re.sub(
+            r"^reference_height\s*=\s*\d+",
+            f"reference_height = {target_window['height']}",
+            content,
+            flags=re.MULTILINE,
+        )
 
-    with open(config_path, "w", encoding="utf-8") as f:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         f.write(content)
 
     print()

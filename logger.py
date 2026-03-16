@@ -20,4 +20,5 @@ def debug(msg: str):
 
 
 def hit(name: str, cost: int, idx: int):
-    info(f"🎯 卡槽{idx + 1}: {name} ({cost}金币) → 已购买")
+    cost_text = f"{cost}金币" if cost > 0 else "?金币"
+    info(f"🎯 卡槽{idx + 1}: {name} ({cost_text}) → 已购买")
