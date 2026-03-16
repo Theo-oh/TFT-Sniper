@@ -41,41 +41,18 @@ def _resolve_card_point(
     return int(round(card_x)), int(round(card_y))
 
 
-def click_card(
-    slot_idx: int,
-    roi: dict,
-    click_y: int = 0,
-    click_point=None,
-    jitter_x: int = 0,
-    jitter_y: int = 0,
-    move_settle_ms: int = 0,
-    hold_ms: int = 0,
-    restore_ms: int = 0,
-    timing_jitter_ms: int = 0,
+def _click_at(
+    card_x: int,
+    card_y: int,
+    move_settle_ms: int,
+    hold_ms: int,
+    timing_jitter_ms: int,
 ):
-    """点击指定卡槽购买
-
-    slot_idx: 卡槽索引 0-4（左到右）
-    roi:      截图 ROI（Point 坐标）
-    click_y:  购买点击 y 坐标（Point），0 则用 ROI 中心
-    """
-    card_x, card_y = _resolve_card_point(
-        slot_idx,
-        roi,
-        click_y=click_y,
-        click_point=click_point,
-        jitter_x=jitter_x,
-        jitter_y=jitter_y,
-    )
-
-    original = _mouse.position
     _mouse.position = (card_x, card_y)
     _sleep_ms(move_settle_ms, timing_jitter_ms)
     _mouse.press(Button.left)
     _sleep_ms(hold_ms, timing_jitter_ms)
     _mouse.release(Button.left)
-    _sleep_ms(restore_ms, timing_jitter_ms)
-    _mouse.position = original
 
 
 def click_cards(
@@ -111,11 +88,7 @@ def click_cards(
 
     original = _mouse.position
     for i, (card_x, card_y) in enumerate(targets):
-        _mouse.position = (card_x, card_y)
-        _sleep_ms(move_settle_ms, timing_jitter_ms)
-        _mouse.press(Button.left)
-        _sleep_ms(hold_ms, timing_jitter_ms)
-        _mouse.release(Button.left)
+        _click_at(card_x, card_y, move_settle_ms, hold_ms, timing_jitter_ms)
         if i < len(targets) - 1:
             _sleep_ms(inter_click_ms, timing_jitter_ms)
 

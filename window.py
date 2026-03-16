@@ -40,13 +40,6 @@ def _normalize_window(info):
     }
 
 
-def _contains_any(text, keywords):
-    if not keywords:
-        return True
-    normalized = text.lower()
-    return any(keyword.lower() in normalized for keyword in keywords if keyword)
-
-
 def _bundle_id_for_pid(pid: int) -> str:
     if pid <= 0:
         return ""
@@ -63,16 +56,8 @@ def _bundle_id_for_pid(pid: int) -> str:
     return bundle_id
 
 
-def _owner_keywords(window_cfg):
-    keywords = list(window_cfg.get("owner_keywords", []) or [])
-    owner_name = str(window_cfg.get("owner_name", "") or "").strip()
-    if owner_name:
-        keywords.insert(0, owner_name)
-    return [keyword for keyword in keywords if keyword]
-
-
 def find_window(window_cfg: dict):
-    """查找目标窗口，优先返回面积最大的匹配结果"""
+    """按 bundle id 查找目标窗口，优先返回面积最大的匹配结果。"""
     windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID
     )
@@ -80,10 +65,7 @@ def find_window(window_cfg: dict):
         return None
 
     bundle_id = str(window_cfg.get("bundle_id", "") or "").strip()
-    owner_keywords = _owner_keywords(window_cfg)
-    title_keywords = list(window_cfg.get("title_keywords", []) or [])
-    require_title = bool(window_cfg.get("require_title_match", False))
-    if not bundle_id and not owner_keywords and not title_keywords:
+    if not bundle_id:
         return None
 
     candidates = []
@@ -95,58 +77,39 @@ def find_window(window_cfg: dict):
             continue
         if info["layer"] != 0:
             continue
-        if bundle_id and info["bundle_id"] != bundle_id:
+        if info["bundle_id"] != bundle_id:
             continue
-        if not _contains_any(info["owner_name"], owner_keywords):
-            continue
-        if require_title and not _contains_any(info["name"], title_keywords):
-            continue
-        if title_keywords and not require_title:
-            if not _contains_any(info["name"], title_keywords):
-                info["title_match"] = False
-            else:
-                info["title_match"] = True
-        else:
-            info["title_match"] = True
         candidates.append(info)
 
     if not candidates:
         return None
 
     candidates.sort(
-        key=lambda item: (
-            item["title_match"],
-            item["width"] * item["height"],
-            item["alpha"],
-        ),
+        key=lambda item: (item["width"] * item["height"], item["alpha"]),
         reverse=True,
     )
     return candidates[0]
 
 
 def resolve_geometry(config: dict):
-    """返回 (roi, click_y, window_info, scale_x, scale_y)"""
+    """返回 (roi, click_y, window_info)。"""
     roi = dict(config["roi"])
     click_y = int(config.get("click_y", roi.get("click_y", 0)) or 0)
     window_cfg = config.get("window", {})
 
     if not window_cfg.get("enabled", False):
-        return roi, click_y, None, 1.0, 1.0
+        return roi, click_y, None
 
     target = find_window(window_cfg)
     if target is None:
-        return None, click_y, None, 1.0, 1.0
+        return None, click_y, None
 
     ref_width = int(window_cfg.get("reference_width", 0) or 0)
     ref_height = int(window_cfg.get("reference_height", 0) or 0)
-    scale_with_window = bool(window_cfg.get("scale_with_window", False))
-    scale_x = target["width"] / ref_width if scale_with_window and ref_width > 0 else 1.0
-    scale_y = target["height"] / ref_height if scale_with_window and ref_height > 0 else 1.0
     target["reference_width"] = ref_width
     target["reference_height"] = ref_height
-    target["scale_with_window"] = scale_with_window
     target["size_warning"] = ""
-    if not scale_with_window and ref_width > 0 and ref_height > 0:
+    if ref_width > 0 and ref_height > 0:
         if target["width"] != ref_width or target["height"] != ref_height:
             target["size_warning"] = (
                 f"窗口尺寸已变为 {target['width']}x{target['height']}，"
@@ -154,20 +117,18 @@ def resolve_geometry(config: dict):
             )
 
     resolved_roi = {
-        "left": int(round(target["left"] + roi["left"] * scale_x)),
-        "top": int(round(target["top"] + roi["top"] * scale_y)),
-        "width": max(1, int(round(roi["width"] * scale_x))),
-        "height": max(1, int(round(roi["height"] * scale_y))),
+        "left": target["left"] + roi["left"],
+        "top": target["top"] + roi["top"],
+        "width": max(1, roi["width"]),
+        "height": max(1, roi["height"]),
     }
 
-    resolved_click_y = 0
-    if click_y > 0:
-        resolved_click_y = int(round(target["top"] + click_y * scale_y))
+    resolved_click_y = target["top"] + click_y if click_y > 0 else 0
 
-    return resolved_roi, resolved_click_y, target, scale_x, scale_y
+    return resolved_roi, resolved_click_y, target
 
 
-def resolve_click_targets(config: dict, target_window=None, scale_x=1.0, scale_y=1.0):
+def resolve_click_targets(config: dict, target_window=None):
     """解算手工标注的点击点位。
 
     返回 (points, jitter, warning)
@@ -177,8 +138,8 @@ def resolve_click_targets(config: dict, target_window=None, scale_x=1.0, scale_y
     """
     click_cfg = config.get("click", {})
     jitter = {
-        "x": max(0, int(round((click_cfg.get("jitter_x", 0) or 0) * scale_x))),
-        "y": max(0, int(round((click_cfg.get("jitter_y", 0) or 0) * scale_y))),
+        "x": max(0, int(click_cfg.get("jitter_x", 0) or 0)),
+        "y": max(0, int(click_cfg.get("jitter_y", 0) or 0)),
     }
 
     if not click_cfg.get("use_slot_points", False):
@@ -198,8 +159,8 @@ def resolve_click_targets(config: dict, target_window=None, scale_x=1.0, scale_y
         if x <= 0 or y <= 0:
             return None, jitter, f"手动点击点位 slot_points[{i}] 未配置有效坐标"
 
-        resolved_x = int(round(x * scale_x))
-        resolved_y = int(round(y * scale_y))
+        resolved_x = x
+        resolved_y = y
         if target_window is not None:
             resolved_x += target_window["left"]
             resolved_y += target_window["top"]

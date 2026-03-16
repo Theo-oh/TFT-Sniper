@@ -1,40 +1,20 @@
 # ==========================================
 # TFT-Sniper 配置文件
-# 热重载: 运行时按 Cmd+Shift+R 即时生效
+# 运行时按 Cmd+Shift+R 热重载
 # ==========================================
 
 # 目标英雄名单（留空 = 不按名匹配）
-target_heroes = ["千珏", "德莱文", "奥恩","盖伦","佛耶戈","布里次"]
+target_heroes = ["千珏", "德莱文", "奥恩", "盖伦", "佛耶戈", "布里次"]
 
 # 目标价格列表（留空 = 不按价格匹配）
 # 名字和价格是 OR 关系，任一命中即购买
 target_costs = [5]
 
-# fixed 模式下的固定等待时间（秒）
-# adaptive 模式下不会使用这个值
+# Shift+D 后的固定等待时间（秒）
 animation_delay = 0.42
 
 # 连续按 Shift+D 的防抖冷却（秒）
 debounce_cooldown = 0.05
-
-# 等待商店刷新的方式:
-# "adaptive" = 轮询画面变化，稳定后立刻 OCR，推荐
-# "fixed"    = 固定等待 animation_delay 秒
-wait_mode = "fixed"
-
-# adaptive 模式参数
-# 先等待一个最小时间窗，再开始轮询，可减少无意义的早期探针截图
-min_wait = 0.18
-
-# 最多等待多久；超时后直接使用最后一帧继续 OCR
-max_wait = 0.45
-
-# 轮询截图的间隔（秒）
-# 越小越灵敏，但会多做几次截图
-poll_interval = 0.02
-
-# OCR 识别级别: "accurate"（中文必须）或 "fast"（仅英文）
-recognition_level = "accurate"
 
 # 调试模式: 保存截图、打印 OCR 原文/置信度/耗时
 debug = true
@@ -50,30 +30,20 @@ width = 1408
 height = 52
 
 # 购买点击的 y 坐标（Point）
-# 0 = 使用 ROI 垂直中心
-# 窗口模式关闭时是屏幕绝对坐标；开启时是相对窗口顶部的坐标
+# 仅在未启用手工点击点位时作为回退值使用
 click_y = 1210
 
 # 金铲铲窗口自动跟随
-# enabled = true 后，会在每次识别前先定位目标窗口，再把 ROI/click_y 解算到当前窗口位置
+# enabled = true 后，ROI 和点击点位都按相对窗口坐标解算
 [window]
 enabled = true
 bundle_id = "com.tencent.jkchess"
-owner_name = ""
-owner_keywords = []
-title_keywords = []
-require_title_match = false
 
-# 低维护推荐: 保持 scale_with_window = false，只跟随窗口移动，不自动缩放
-# 若你之后真的会改窗口大小，再把 scale_with_window 打开
-scale_with_window = false
-
-# 参考窗口尺寸：默认用于尺寸变更告警；只有 scale_with_window = true 时才参与缩放
+# 仅用于窗口尺寸告警；如果大小变化，建议重新运行 calibrate.py
 reference_width = 2316
 reference_height = 1330
 
-# 点击配置
-# 低维护推荐: 手动标注 5 个卡槽的点击中心点，比按 ROI 五等分推算更稳
+# 手工点击点位
 # 当 [window].enabled = true 时，下方坐标是相对窗口左上角的 Point
 # 当 [window].enabled = false 时，下方坐标是屏幕绝对 Point
 [click]
@@ -89,12 +59,10 @@ slot_points = [
 ]
 
 # 每次点击时的微抖动范围（Point）
-# 建议先从 0 开始，确认命中稳定后再尝试 1~3 的轻微随机偏移
 jitter_x = 0
 jitter_y = 0
 
 # 拟人化点击时序（毫秒）
-# 多张连买漏点时，优先增大 inter_click_ms，其次增大 hold_ms
 move_settle_ms = 16
 hold_ms = 18
 inter_click_ms = 70

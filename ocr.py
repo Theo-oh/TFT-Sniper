@@ -3,7 +3,6 @@
 import re
 import unicodedata
 
-import Quartz
 import Vision
 from Foundation import NSDictionary
 
@@ -32,12 +31,11 @@ def _extract_cost(text: str):
     return None
 
 
-def recognize(cgimage, level="accurate"):
+def recognize(cgimage):
     """对 CGImage 执行 OCR，返回 (slots, raw_texts)
 
     slots:     5 个卡槽 [{"name": str, "cost": int}, ...]
     raw_texts: 原始识别文本列表（调试用）
-    注意: 中文识别必须用 accurate，fast 模式不支持 CJK
     """
     if cgimage is None:
         return _empty_slots(), []
