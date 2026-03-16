@@ -1,0 +1,3 @@
+pyobjc-framework-Vision
+pyobjc-framework-Quartz
+pynput
