@@ -2,6 +2,7 @@
 
 import os
 import queue
+import re
 import sys
 import time
 import tomllib
@@ -9,6 +10,7 @@ import tomllib
 import logger
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
+PRESET_NAMES = ("preset1", "preset2", "preset3")
 
 _config = {}
 
@@ -32,11 +34,45 @@ def reload_config():
         logger.info(f"❌ 配置重载失败: {e}")
 
 
+def _resolve_target_heroes():
+    """解析当前生效的阵容预设，兼容旧 target_heroes 配置。"""
+    presets = _config.get("presets", {})
+    if not isinstance(presets, dict) or not presets:
+        heroes = [str(hero).strip() for hero in _config.get("target_heroes", []) or []]
+        heroes = [hero for hero in heroes if hero]
+        return "", heroes, None
+
+    active_preset = str(_config.get("active_preset", "") or "").strip()
+    if active_preset not in presets:
+        fallback = next((name for name in PRESET_NAMES if name in presets), None)
+        if fallback is None:
+            fallback = next(iter(presets.keys()), "")
+        if not fallback:
+            return "", [], "⚠️ presets 已配置，但没有可用预设"
+        warning = (
+            f"⚠️ active_preset={active_preset or '(未配置)'} 无效，"
+            f"本次临时回退到 {fallback}"
+        )
+        active_preset = fallback
+    else:
+        warning = None
+
+    raw_heroes = presets.get(active_preset, [])
+    if not isinstance(raw_heroes, list):
+        raw_heroes = []
+    heroes = [str(hero).strip() for hero in raw_heroes if str(hero).strip()]
+    return active_preset, heroes, warning
+
+
 def _print_config():
-    heroes = _config.get("target_heroes", [])
+    active_preset, heroes, warning = _resolve_target_heroes()
     window_cfg = _config.get("window", {})
     click_cfg = _config.get("click", {})
     delay = float(_config.get("animation_delay", 0.42) or 0.42)
+    if warning:
+        logger.info(warning)
+    if active_preset:
+        logger.info(f"   当前预设: {active_preset}")
     logger.info(f"   目标英雄: {heroes if heroes else '(未配置)'}")
     if window_cfg.get("enabled", False):
         logger.info("   ROI 模式: 跟随金铲铲窗口")
@@ -59,6 +95,55 @@ def _target_bundle_id() -> str:
     """读取当前配置中的目标 bundle id。"""
     window_cfg = _config.get("window", {})
     return str(window_cfg.get("bundle_id", "") or "").strip()
+
+
+def _set_active_preset_in_config(preset_name: str):
+    """把 active_preset 写回 config.toml。"""
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    new_line = f'active_preset = "{preset_name}"'
+    if re.search(r'^active_preset\s*=', content, flags=re.MULTILINE):
+        content = re.sub(
+            r'^active_preset\s*=\s*".*"$',
+            new_line,
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    else:
+        content = new_line + "\n\n" + content
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def switch_preset(slot: int):
+    """切换到 preset1/2/3，并写回 config.toml。"""
+    preset_name = f"preset{slot}"
+    presets = _config.get("presets", {})
+    if not isinstance(presets, dict) or not presets:
+        logger.info("⚠️ 当前未配置 [presets]，无法切换阵容预设")
+        return
+
+    if preset_name not in presets:
+        logger.info(f"⚠️ 当前未配置 {preset_name}")
+        return
+
+    current_preset, current_heroes, _ = _resolve_target_heroes()
+    if current_preset == preset_name:
+        logger.info(f"🎛 当前已是 {preset_name}: {current_heroes if current_heroes else '(空预设)'}")
+        return
+
+    try:
+        _set_active_preset_in_config(preset_name)
+        load_config()
+        _, heroes, warning = _resolve_target_heroes()
+        if warning:
+            logger.info(warning)
+        logger.info(f"🎛 已切换到 {preset_name}: {heroes if heroes else '(空预设)'}")
+    except Exception as e:
+        logger.info(f"❌ 阵容切换失败: {e}")
 
 
 def sync_runtime_state(previous_bundle_id: str, previous_running: bool):
@@ -149,7 +234,7 @@ def process():
             logger.debug(f"  卡槽{i + 1}: {{'name': {s['name']!r}}}")
 
     # 4. 匹配
-    heroes = _config.get("target_heroes", [])
+    _, heroes, _ = _resolve_target_heroes()
     hits = matcher.match(slots, heroes)
 
     # 5. 点击（从右到左）
@@ -207,13 +292,16 @@ def main():
         sys.exit(1)
 
     # 启动键盘监听
-    trigger.init(_config.get("debounce_cooldown", 0.05), reload_config)
+    trigger.init(_config.get("debounce_cooldown", 0.05), reload_config, switch_preset)
     task_queue = trigger.start()
 
     bundle_id = ""
     game_running = True
 
-    logger.info("🎮 已启动，按 Shift+D 刷新识别，Cmd+Shift+R 重载配置，Ctrl+C 退出")
+    logger.info(
+        "🎮 已启动，Shift+D 刷新识别，Cmd+Option+1/2/3 切换预设，"
+        "Cmd+Shift+R 重载配置，Ctrl+C 退出"
+    )
     bundle_id, game_running, state_message = sync_runtime_state(bundle_id, game_running)
     if state_message:
         logger.info(state_message)

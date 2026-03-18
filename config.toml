@@ -3,8 +3,13 @@
 # 运行时按 Cmd+Shift+R 热重载
 # ==========================================
 
-# 目标英雄名单（留空 = 不购买）
-target_heroes = ["千珏", "德莱文", "奥恩", "盖伦", "佛耶戈", "布里次"]
+# 当前生效阵容预设：preset1 / preset2 / preset3
+active_preset = "preset1"
+
+[presets]
+preset1 = ["千珏", "德莱文", "奥恩", "盖伦", "佛耶戈", "布里次"]
+preset2 = []
+preset3 = []
 
 # Shift+D 后的固定等待时间（秒）
 animation_delay = 0.4

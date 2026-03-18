@@ -15,6 +15,7 @@ macOS 上用于《金铲铲之战》的纯视觉辅助脚本。
 - ROI 和点击点位都支持跟随 `com.tencent.jkchess` 窗口移动
 - 点击位置使用手工标定的 5 个卡槽中心，而不是 ROI 五等分推算
 - 只按英雄名匹配，不再保留金币价格匹配分支
+- 支持 3 套阵容预设和运行时热切换
 - 游戏未运行时自动待命，游戏启动后自动激活，退出后自动暂停
 
 ## 特点
@@ -43,7 +44,7 @@ python3 -m venv .venv
 
 项目只需要维护三类配置：
 
-- 匹配条件：`target_heroes`
+- 匹配条件：`active_preset`、`[presets]`
 - 固定等待：`animation_delay`
 - 几何信息：`[roi]`、`[window]`、`[click]`
 
@@ -51,13 +52,22 @@ python3 -m venv .venv
 
 | 字段 | 作用 |
 | --- | --- |
-| `target_heroes` | 目标英雄名单，命中即点击 |
+| `active_preset` | 当前生效的阵容预设 |
+| `[presets]` | 3 套英雄名单 |
 | `animation_delay` | `Shift+D` 后固定等待多久再截图 |
 | `debug` | 是否保存调试图并打印 OCR/耗时日志 |
 | `[roi]` | 商店名称文字带的截图区域 |
 | `[window]` | 是否跟随 `com.tencent.jkchess` 窗口移动 |
 | `[click].slot_points` | 5 个卡槽的点击中心点 |
 | `[click]` 下的时序参数 | 多张连买时的点击节奏 |
+
+预设切换热键：
+
+- `Cmd+Option+1`：切到 `preset1`
+- `Cmd+Option+2`：切到 `preset2`
+- `Cmd+Option+3`：切到 `preset3`
+
+切换时会回写 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml) 的 `active_preset`，重启后仍保持上次选择。
 
 ## 校准
 
@@ -93,6 +103,7 @@ python3 -m venv .venv
 - 检测到 `com.tencent.jkchess` 后，`Shift+D` 才会生效
 - 游戏退出后，热键会自动暂停
 - `Shift+D`：执行一次固定等待 + 截图 + OCR + 点击
+- `Cmd+Option+1/2/3`：切换阵容预设
 - `Cmd+Shift+R`：热重载 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml)
 - `Ctrl+C`：退出
 
