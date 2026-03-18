@@ -3,8 +3,6 @@
 from AppKit import NSRunningApplication
 import Quartz
 
-_BUNDLE_CACHE = {}
-
 
 def _get(info, key, default=None):
     """兼容 PyObjC 返回的 CFDictionary 键访问"""
@@ -15,7 +13,7 @@ def _get(info, key, default=None):
     return info.get(str(key), default)
 
 
-def _normalize_window(info):
+def _normalize_window(info, cache=None):
     """提取窗口的常用字段"""
     bounds = dict(_get(info, Quartz.kCGWindowBounds, {}) or {})
     width = int(bounds.get("Width", 0) or 0)
@@ -29,7 +27,7 @@ def _normalize_window(info):
         "pid": pid,
         "owner_name": str(_get(info, Quartz.kCGWindowOwnerName, "") or ""),
         "name": str(_get(info, Quartz.kCGWindowName, "") or ""),
-        "bundle_id": _bundle_id_for_pid(pid),
+        "bundle_id": _bundle_id_for_pid(pid, cache),
         "left": int(bounds.get("X", 0) or 0),
         "top": int(bounds.get("Y", 0) or 0),
         "width": width,
@@ -40,19 +38,21 @@ def _normalize_window(info):
     }
 
 
-def _bundle_id_for_pid(pid: int) -> str:
+def _bundle_id_for_pid(pid: int, cache: dict = None) -> str:
     if pid <= 0:
         return ""
-    cached = _BUNDLE_CACHE.get(pid)
-    if cached is not None:
-        return cached
+    if cache is not None:
+        cached = cache.get(pid)
+        if cached is not None:
+            return cached
 
     app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
     bundle_id = ""
     if app is not None:
         bundle_id = str(app.bundleIdentifier() or "")
 
-    _BUNDLE_CACHE[pid] = bundle_id
+    if cache is not None:
+        cache[pid] = bundle_id
     return bundle_id
 
 
@@ -78,9 +78,10 @@ def find_window(window_cfg: dict):
     if not bundle_id:
         return None
 
+    cache = {}  # 调用级缓存，避免同一轮内重复查 PID
     candidates = []
     for raw in windows:
-        info = _normalize_window(raw)
+        info = _normalize_window(raw, cache)
         if info is None:
             continue
         if not info["onscreen"] or info["alpha"] <= 0:

@@ -34,6 +34,43 @@ _STEP_HINTS = {
 }
 
 
+def _section_range(content: str, section: str):
+    """返回 TOML section 的文本范围 (start, end)。"""
+    header = re.search(
+        rf'^\[{re.escape(section)}\]\s*$', content, flags=re.MULTILINE
+    )
+    if header is None:
+        return None, None
+    start = header.end()
+    # section 到下一个 [xxx] 或 EOF 结束
+    nxt = re.search(r'^\[', content[start:], flags=re.MULTILINE)
+    end = start + nxt.start() if nxt else len(content)
+    return start, end
+
+
+def _replace_in_section(content: str, section: str, key: str, value) -> str:
+    """在指定 TOML section 内替换 key = value（仅标量值）。"""
+    start, end = _section_range(content, section)
+    if start is None:
+        return content
+    segment = content[start:end]
+    pattern = re.compile(rf'^({re.escape(key)}\s*=\s*).*$', flags=re.MULTILINE)
+    new_seg = pattern.sub(rf'\g<1>{value}', segment, count=1)
+    return content[:start] + new_seg + content[end:]
+
+
+def _replace_block_in_section(
+    content: str, section: str, pattern: str, replacement: str
+) -> str:
+    """在指定 TOML section 内替换一个多行块（如 slot_points = [...]）。"""
+    start, end = _section_range(content, section)
+    if start is None:
+        return content
+    segment = content[start:end]
+    new_seg = re.sub(pattern, replacement, segment, count=1, flags=re.MULTILINE)
+    return content[:start] + new_seg + content[end:]
+
+
 def _print_next_hint():
     idx = len(_points)
     if idx < _TOTAL_POINTS:
@@ -135,39 +172,29 @@ def main():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
-    content = re.sub(r"^top\s*=\s*\d+", f"top = {roi['top']}", content, flags=re.MULTILINE)
-    content = re.sub(r"^left\s*=\s*\d+", f"left = {roi['left']}", content, flags=re.MULTILINE)
-    content = re.sub(r"^width\s*=\s*\d+", f"width = {roi['width']}", content, flags=re.MULTILINE)
-    content = re.sub(r"^height\s*=\s*\d+", f"height = {roi['height']}", content, flags=re.MULTILINE)
-    content = re.sub(r"^click_y\s*=\s*\d+", f"click_y = {click_y}", content, flags=re.MULTILINE)
-    content = re.sub(
-        r"^use_slot_points\s*=\s*(true|false)",
-        "use_slot_points = true",
-        content,
-        flags=re.MULTILINE,
-    )
+    # [roi] section
+    content = _replace_in_section(content, "roi", "top", roi["top"])
+    content = _replace_in_section(content, "roi", "left", roi["left"])
+    content = _replace_in_section(content, "roi", "width", roi["width"])
+    content = _replace_in_section(content, "roi", "height", roi["height"])
+    content = _replace_in_section(content, "roi", "click_y", click_y)
+
+    # [click] section
+    content = _replace_in_section(content, "click", "use_slot_points", "true")
     slot_points_block = "slot_points = [\n" + "\n".join(
         f"  {{ x = {point['x']}, y = {point['y']} }}," for point in slot_points
     ) + "\n]"
-    content = re.sub(
-        r"^slot_points\s*=\s*\[(?:.|\n)*?\]",
-        slot_points_block,
-        content,
-        count=1,
-        flags=re.MULTILINE,
+    content = _replace_block_in_section(
+        content, "click", r"^slot_points\s*=\s*\[(?:.|\n)*?\]", slot_points_block
     )
+
+    # [window] section
     if target_window:
-        content = re.sub(
-            r"^reference_width\s*=\s*\d+",
-            f"reference_width = {target_window['width']}",
-            content,
-            flags=re.MULTILINE,
+        content = _replace_in_section(
+            content, "window", "reference_width", target_window["width"]
         )
-        content = re.sub(
-            r"^reference_height\s*=\s*\d+",
-            f"reference_height = {target_window['height']}",
-            content,
-            flags=re.MULTILINE,
+        content = _replace_in_section(
+            content, "window", "reference_height", target_window["height"]
         )
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:

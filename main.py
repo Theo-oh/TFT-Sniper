@@ -122,8 +122,9 @@ def _set_active_preset_in_config(preset_name: str):
 
     new_line = f'active_preset = "{preset_name}"'
     if re.search(r'^active_preset\s*=', content, flags=re.MULTILINE):
+        # 兼容双引号、单引号和无引号写法
         content = re.sub(
-            r'^active_preset\s*=\s*".*"$',
+            r'^active_preset\s*=\s*["\']?.*["\']?\s*$',
             new_line,
             content,
             count=1,
