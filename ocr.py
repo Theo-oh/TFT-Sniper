@@ -6,12 +6,11 @@ import unicodedata
 import Vision
 from Foundation import NSDictionary
 
-UNKNOWN_COST = 0
-VALID_COST_DIGITS = "1234567"
+SLOT_COUNT = 5
 
 
 def _empty_slots():
-    return [{"name": "", "cost": UNKNOWN_COST} for _ in range(5)]
+    return [{"name": ""} for _ in range(SLOT_COUNT)]
 
 
 def _normalize_text(text: str) -> str:
@@ -19,87 +18,87 @@ def _normalize_text(text: str) -> str:
     return unicodedata.normalize("NFKC", text).strip()
 
 
-def _extract_cost(text: str):
-    """从 OCR 文本中提取价格。
-
-    金铲铲商店价格固定为 1~7。Vision 常把金币图标误识别成前缀数字，
-    例如 "93"、"02"、"51"，这里按领域规则取最右侧的有效价格数字。
-    """
-    for ch in reversed(text):
-        if ch in VALID_COST_DIGITS:
-            return int(ch)
-    return None
-
-
-def recognize(cgimage):
-    """对 CGImage 执行 OCR，返回 (slots, raw_texts)
-
-    slots:     5 个卡槽 [{"name": str, "cost": int}, ...]
-    raw_texts: 原始识别文本列表（调试用）
-    """
+def _recognize_items(cgimage, languages, min_text_height: float):
+    """对给定图像执行 OCR，返回 [{text, confidence, cx}, ...]。"""
     if cgimage is None:
-        return _empty_slots(), []
+        return []
 
     handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(
         cgimage, NSDictionary.dictionary()
     )
     request = Vision.VNRecognizeTextRequest.alloc().init()
-    request.setRecognitionLanguages_(["zh-Hans"])
-    # 中文必须用 accurate，fast 不支持 CJK
+    request.setRecognitionLanguages_(languages)
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
-    # 英雄名是专有名词，语言纠错收益有限，关闭可减少额外开销
     request.setUsesLanguageCorrection_(False)
-    # 小文字适配（归一化高度比例，0.0 ~ 1.0）
-    request.setMinimumTextHeight_(0.01)
+    request.setMinimumTextHeight_(min_text_height)
 
     success, error = handler.performRequests_error_([request], None)
-    if not success:
-        return _empty_slots(), []
+    if not success or error is not None:
+        return []
 
-    observations = request.results()
-    if not observations:
-        return _empty_slots(), []
-
-    return _parse(observations)
-
-
-def _parse(observations):
-    """按 boundingBox.x 分配到 5 个卡槽，区分英雄名和价格"""
-    raw_texts = []
     items = []
-
-    for obs in observations:
+    for obs in request.results() or []:
         candidates = obs.topCandidates_(1)
         if not candidates or candidates.count() == 0:
             continue
 
-        text = candidates[0].string().strip()
-        confidence = candidates[0].confidence()
-        bbox = obs.boundingBox()
-        cx = bbox.origin.x + bbox.size.width / 2
+        text = str(candidates[0].string() or "").strip()
+        if not text:
+            continue
 
-        raw_texts.append(f"{text} (x={cx:.3f}, conf={confidence:.2f})")
-        items.append({"text": text, "cx": cx, "confidence": confidence})
+        items.append(
+            {
+                "text": text,
+                "confidence": float(candidates[0].confidence()),
+                "cx": float(obs.boundingBox().origin.x + obs.boundingBox().size.width / 2),
+            }
+        )
+    return items
+
+
+def _extract_name(text: str) -> str:
+    """去掉 OCR 末尾可能粘上的价格数字，只保留英雄名。"""
+    text = _normalize_text(text)
+    if text.isdigit():
+        return ""
+    return re.sub(r"\s*[0-9]+\s*$", "", text).strip()
+
+
+def recognize(cgimage):
+    """对 CGImage 执行 OCR，返回 (slots, raw_texts)
+
+    slots:     5 个卡槽 [{"name": str}, ...]
+    raw_texts: 原始识别文本列表（调试用）
+    """
+    if cgimage is None:
+        return _empty_slots(), []
+
+    items = _recognize_items(cgimage, ["zh-Hans"], 0.01)
+    if not items:
+        return _empty_slots(), []
+
+    return _parse(items)
+
+
+def _parse(items):
+    """按 boundingBox.x 分配到 5 个卡槽，仅保留英雄名"""
+    raw_texts = []
 
     # 按 x 均分到 5 个卡槽
-    slot_w = 1.0 / 5
-    slots = [{"name": "", "cost": UNKNOWN_COST} for _ in range(5)]
+    slot_w = 1.0 / SLOT_COUNT
+    slots = [{"name": ""} for _ in range(SLOT_COUNT)]
 
     for item in items:
-        idx = min(int(item["cx"] / slot_w), 4)
-        text = _normalize_text(item["text"])
-        cost = _extract_cost(text)
+        text = item["text"]
+        confidence = item["confidence"]
+        cx = item["cx"]
+        raw_texts.append(f"{text} (x={cx:.3f}, conf={confidence:.2f})")
 
-        if text.isdigit():
-            slots[idx]["cost"] = cost if cost is not None else UNKNOWN_COST
-        else:
-            # 可能是 "英雄名 数字" 混合，价格固定 1~7，因此优先取尾部有效数字
-            m = re.match(r"^(.+?)\s*([0-9]+)\s*$", text)
-            if m:
-                slots[idx]["name"] = m.group(1)
-                if cost is not None:
-                    slots[idx]["cost"] = cost
-            else:
-                slots[idx]["name"] = text
+        name = _extract_name(text)
+        if not name:
+            continue
+
+        idx = min(int(item["cx"] / slot_w), SLOT_COUNT - 1)
+        slots[idx]["name"] = name
 
     return slots, raw_texts

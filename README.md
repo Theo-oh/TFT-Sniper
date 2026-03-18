@@ -14,6 +14,8 @@ macOS 上用于《金铲铲之战》的纯视觉辅助脚本。
 - 固定等待，不再保留自适应探针等待
 - ROI 和点击点位都支持跟随 `com.tencent.jkchess` 窗口移动
 - 点击位置使用手工标定的 5 个卡槽中心，而不是 ROI 五等分推算
+- 只按英雄名匹配，不再保留金币价格匹配分支
+- 游戏未运行时自动待命，游戏启动后自动激活，退出后自动暂停
 
 ## 特点
 
@@ -41,7 +43,7 @@ python3 -m venv .venv
 
 项目只需要维护三类配置：
 
-- 匹配条件：`target_heroes`、`target_costs`
+- 匹配条件：`target_heroes`
 - 固定等待：`animation_delay`
 - 几何信息：`[roi]`、`[window]`、`[click]`
 
@@ -50,18 +52,12 @@ python3 -m venv .venv
 | 字段 | 作用 |
 | --- | --- |
 | `target_heroes` | 目标英雄名单，命中即点击 |
-| `target_costs` | 目标价格列表，命中即点击 |
 | `animation_delay` | `Shift+D` 后固定等待多久再截图 |
 | `debug` | 是否保存调试图并打印 OCR/耗时日志 |
-| `[roi]` | 商店名称和价格文字带的截图区域 |
+| `[roi]` | 商店名称文字带的截图区域 |
 | `[window]` | 是否跟随 `com.tencent.jkchess` 窗口移动 |
 | `[click].slot_points` | 5 个卡槽的点击中心点 |
 | `[click]` 下的时序参数 | 多张连买时的点击节奏 |
-
-匹配规则是 OR：
-
-- 名字命中就点击
-- 价格命中也点击
 
 ## 校准
 
@@ -93,9 +89,33 @@ python3 -m venv .venv
 
 运行后：
 
+- 如果金铲铲未运行，脚本会保持待命
+- 检测到 `com.tencent.jkchess` 后，`Shift+D` 才会生效
+- 游戏退出后，热键会自动暂停
 - `Shift+D`：执行一次固定等待 + 截图 + OCR + 点击
 - `Cmd+Shift+R`：热重载 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml)
 - `Ctrl+C`：退出
+
+## 开机自启（推荐）
+
+如果你不想每次手动开终端，推荐把 helper 注册成当前用户的 `LaunchAgent`：
+
+```bash
+.venv/bin/python install_launch_agent.py
+```
+
+安装后：
+
+- 登录 macOS 后 helper 会自动启动
+- 金铲铲未运行时只做轻量待命
+- 金铲铲启动后自动激活热键
+- 金铲铲退出后自动暂停热键
+
+注意：
+
+- 建议用你平时运行项目的同一个 Python 安装，也就是上面的 `.venv/bin/python`
+- 辅助功能和屏幕录制权限需要授权给实际运行的 Python 解释器
+- 这套方案是“常驻待命 + 跟随游戏激活/暂停”，这是 macOS 上最省维护也最稳定的做法
 
 ## 调参建议
 
@@ -103,19 +123,6 @@ python3 -m venv .venv
 - 多张连买偶发漏点：优先增大 `inter_click_ms`，其次增大 `hold_ms`
 - 点位不准：重新运行 [calibrate.py](/Users/hh/Workspace/TFT-Sniper/calibrate.py)
 - 调试完成后把 `debug = false`，减少磁盘写入和日志噪声
-
-## OCR 价格规则
-
-价格只接受 `1~7`。
-
-这是为了处理金币图标带来的常见 OCR 噪声，例如：
-
-- `93 -> 3`
-- `51 -> 1`
-- `02 -> 2`
-- `⑦ -> 7`
-
-如果价格没识别出来，日志会显示 `?金币`，不会再显示负数。
 
 ## 项目结构
 
@@ -130,6 +137,7 @@ TFT-Sniper/
 ├── ocr.py
 ├── matcher.py
 ├── action.py
+├── install_launch_agent.py
 ├── permissions.py
 ├── logger.py
 └── requirements.txt
@@ -141,10 +149,11 @@ TFT-Sniper/
 - [trigger.py](/Users/hh/Workspace/TFT-Sniper/trigger.py)：全局热键监听
 - [window.py](/Users/hh/Workspace/TFT-Sniper/window.py)：窗口定位和相对坐标解算
 - [capture.py](/Users/hh/Workspace/TFT-Sniper/capture.py)：Quartz 截图
-- [ocr.py](/Users/hh/Workspace/TFT-Sniper/ocr.py)：Vision OCR 和价格解析
-- [matcher.py](/Users/hh/Workspace/TFT-Sniper/matcher.py)：命中判断
+- [ocr.py](/Users/hh/Workspace/TFT-Sniper/ocr.py)：Vision OCR 和英雄名解析
+- [matcher.py](/Users/hh/Workspace/TFT-Sniper/matcher.py)：按英雄名命中判断
 - [action.py](/Users/hh/Workspace/TFT-Sniper/action.py)：批量点击
 - [calibrate.py](/Users/hh/Workspace/TFT-Sniper/calibrate.py)：ROI 和点击点位校准
+- [install_launch_agent.py](/Users/hh/Workspace/TFT-Sniper/install_launch_agent.py)：安装登录自启的 LaunchAgent
 
 ## 当前边界
 

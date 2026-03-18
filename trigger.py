@@ -14,6 +14,8 @@ _last_trigger = 0.0
 _debounce = 0.05
 _modifiers = set()
 _reload_cb = None
+_enabled = True
+_listener = None
 
 
 def init(debounce: float, reload_callback):
@@ -21,6 +23,12 @@ def init(debounce: float, reload_callback):
     global _debounce, _reload_cb
     _debounce = debounce
     _reload_cb = reload_callback
+
+
+def set_enabled(enabled: bool):
+    """启用或暂停 Shift+D 热键。"""
+    global _enabled
+    _enabled = bool(enabled)
 
 
 def _get_vk(key):
@@ -49,6 +57,9 @@ def _on_press(key):
             _reload_cb()
         return
 
+    if not _enabled:
+        return
+
     # Shift+D → 触发识别；其他带修饰组合不处理
     if vk == VK_D and _modifiers == {"shift"}:
         now = time.monotonic()
@@ -66,7 +77,9 @@ def _on_release(key):
 
 def start():
     """启动监听（守护线程），返回任务队列"""
-    listener = Listener(on_press=_on_press, on_release=_on_release)
-    listener.daemon = True
-    listener.start()
+    global _listener
+    if _listener is None:
+        _listener = Listener(on_press=_on_press, on_release=_on_release)
+        _listener.daemon = True
+        _listener.start()
     return _task_queue

@@ -1,6 +1,7 @@
 """TFT-Sniper 入口 — 权限检测 → 加载配置 → 监听 → 识别 → 点击"""
 
 import os
+import queue
 import sys
 import time
 import tomllib
@@ -33,12 +34,10 @@ def reload_config():
 
 def _print_config():
     heroes = _config.get("target_heroes", [])
-    costs = _config.get("target_costs", [])
     window_cfg = _config.get("window", {})
     click_cfg = _config.get("click", {})
     delay = float(_config.get("animation_delay", 0.42) or 0.42)
     logger.info(f"   目标英雄: {heroes if heroes else '(未配置)'}")
-    logger.info(f"   目标价格: {costs if costs else '(未配置)'}")
     if window_cfg.get("enabled", False):
         logger.info("   ROI 模式: 跟随金铲铲窗口")
     else:
@@ -54,6 +53,39 @@ def _print_config():
         f"hold={click_cfg.get('hold_ms', 18)}ms "
         f"gap={click_cfg.get('inter_click_ms', 70)}ms"
     )
+
+
+def _target_bundle_id() -> str:
+    """读取当前配置中的目标 bundle id。"""
+    window_cfg = _config.get("window", {})
+    return str(window_cfg.get("bundle_id", "") or "").strip()
+
+
+def sync_runtime_state(previous_bundle_id: str, previous_running: bool):
+    """同步金铲铲运行状态，并按需切换热键启用状态。"""
+    import trigger, window
+
+    bundle_id = _target_bundle_id()
+    if not bundle_id:
+        trigger.set_enabled(True)
+        if previous_bundle_id:
+            return bundle_id, True, "ℹ️ 未配置 bundle_id，Shift+D 将始终可用"
+        return bundle_id, True, None
+
+    running = window.is_app_running(bundle_id)
+    trigger.set_enabled(running)
+
+    if bundle_id != previous_bundle_id:
+        if running:
+            return bundle_id, running, f"🎮 已检测到 {bundle_id}，热键已激活"
+        return bundle_id, running, f"⏳ 等待 {bundle_id} 启动，热键暂未激活"
+
+    if running != previous_running:
+        if running:
+            return bundle_id, running, "🎮 检测到金铲铲已启动，热键已激活"
+        return bundle_id, running, "⏸ 金铲铲已退出，热键已暂停"
+
+    return bundle_id, running, None
 
 
 def process():
@@ -114,12 +146,11 @@ def process():
     if debug:
         logger.debug(f"OCR 原始结果: {raw_texts}")
         for i, s in enumerate(slots):
-            logger.debug(f"  卡槽{i + 1}: {s}")
+            logger.debug(f"  卡槽{i + 1}: {{'name': {s['name']!r}}}")
 
     # 4. 匹配
     heroes = _config.get("target_heroes", [])
-    costs = _config.get("target_costs", [])
-    hits = matcher.match(slots, heroes, costs)
+    hits = matcher.match(slots, heroes)
 
     # 5. 点击（从右到左）
     action.click_cards(
@@ -136,7 +167,7 @@ def process():
         timing_jitter_ms=_config.get("click", {}).get("timing_jitter_ms", 4),
     )
     for idx in hits:
-        logger.hit(slots[idx]["name"], slots[idx]["cost"], idx)
+        logger.hit(slots[idx]["name"], idx)
 
     t_total = time.perf_counter() - t0
     if debug:
@@ -179,12 +210,29 @@ def main():
     trigger.init(_config.get("debounce_cooldown", 0.05), reload_config)
     task_queue = trigger.start()
 
+    bundle_id = ""
+    game_running = True
+
     logger.info("🎮 已启动，按 Shift+D 刷新识别，Cmd+Shift+R 重载配置，Ctrl+C 退出")
+    bundle_id, game_running, state_message = sync_runtime_state(bundle_id, game_running)
+    if state_message:
+        logger.info(state_message)
     print()
 
     try:
         while True:
-            task_queue.get()  # 阻塞等待 Shift+D 触发
+            bundle_id, game_running, state_message = sync_runtime_state(bundle_id, game_running)
+            if state_message:
+                logger.info(state_message)
+
+            try:
+                task_queue.get(timeout=0.5)  # 等待 Shift+D，同时周期性同步游戏状态
+            except queue.Empty:
+                continue
+
+            if bundle_id and not game_running:
+                logger.info("⚠️ 金铲铲未运行，本次触发已忽略")
+                continue
             process()
     except KeyboardInterrupt:
         logger.info("👋 已退出")

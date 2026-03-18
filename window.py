@@ -56,6 +56,16 @@ def _bundle_id_for_pid(pid: int) -> str:
     return bundle_id
 
 
+def is_app_running(bundle_id: str) -> bool:
+    """检查目标 bundle id 是否有存活进程。"""
+    bundle_id = str(bundle_id or "").strip()
+    if not bundle_id:
+        return False
+
+    apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+    return bool(apps)
+
+
 def find_window(window_cfg: dict):
     """按 bundle id 查找目标窗口，优先返回面积最大的匹配结果。"""
     windows = Quartz.CGWindowListCopyWindowInfo(

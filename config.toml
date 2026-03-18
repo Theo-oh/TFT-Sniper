@@ -3,15 +3,11 @@
 # 运行时按 Cmd+Shift+R 热重载
 # ==========================================
 
-# 目标英雄名单（留空 = 不按名匹配）
+# 目标英雄名单（留空 = 不购买）
 target_heroes = ["千珏", "德莱文", "奥恩", "盖伦", "佛耶戈", "布里次"]
 
-# 目标价格列表（留空 = 不按价格匹配）
-# 名字和价格是 OR 关系，任一命中即购买
-target_costs = [5]
-
 # Shift+D 后的固定等待时间（秒）
-animation_delay = 0.42
+animation_delay = 0.4
 
 # 连续按 Shift+D 的防抖冷却（秒）
 debounce_cooldown = 0.05
@@ -22,7 +18,7 @@ debug = true
 # 商店卡牌行的截图区域（Point 坐标，非像素）
 # 当 [window].enabled = false 时，这里是屏幕绝对坐标
 # 当 [window].enabled = true 时，这里是相对金铲铲窗口左上角的坐标
-# 需覆盖 5 张卡的名称+价格文本区域；启用窗口模式后建议重新运行 calibrate.py
+# 需覆盖 5 张卡的名称文字区域；启用窗口模式后建议重新运行 calibrate.py
 [roi]
 top = 1262
 left = 596
