@@ -45,6 +45,20 @@ def _resolve_card_point(
     return int(round(card_x)), int(round(card_y))
 
 
+def _click_once(point, hold_ms: int, timing_jitter_ms: int):
+    """在已确定的 CGPoint 上执行一次 mouseDown → mouseUp。"""
+    down = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseDown, point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
+    _sleep_ms(hold_ms, timing_jitter_ms)
+
+    up = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseUp, point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+
 def _click_at(
     card_x: int,
     card_y: int,
@@ -52,31 +66,16 @@ def _click_at(
     hold_ms: int,
     timing_jitter_ms: int,
 ):
-    """用 CGEvent 执行一次完整的 move → mouseDown → mouseUp。
-
-    三个事件共用同一个 CGPoint，确保坐标不会因时间窗口漂移。
-    """
+    """move → mouseDown → mouseUp，三个事件共用同一个 CGPoint。"""
     point = Quartz.CGPointMake(card_x, card_y)
 
-    # 1. 移动鼠标到目标位置
     move_event = Quartz.CGEventCreateMouseEvent(
         None, Quartz.kCGEventMouseMoved, point, 0
     )
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_event)
     _sleep_ms(move_settle_ms, timing_jitter_ms)
 
-    # 2. 鼠标按下（使用同一个 point）
-    down_event = Quartz.CGEventCreateMouseEvent(
-        None, Quartz.kCGEventLeftMouseDown, point, 0
-    )
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_event)
-    _sleep_ms(hold_ms, timing_jitter_ms)
-
-    # 3. 鼠标释放（使用同一个 point）
-    up_event = Quartz.CGEventCreateMouseEvent(
-        None, Quartz.kCGEventLeftMouseUp, point, 0
-    )
-    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_event)
+    _click_once(point, hold_ms, timing_jitter_ms)
 
 
 def click_cards(
@@ -91,8 +90,15 @@ def click_cards(
     inter_click_ms: int = 70,
     post_batch_ms: int = 18,
     timing_jitter_ms: int = 4,
+    repeat_count: int = 2,
+    repeat_gap_ms: int = 80,
 ):
-    """批量点击多个卡槽，优先保证多张连买稳定注册。"""
+    """批量点击多个卡槽。
+
+    整个序列执行 repeat_count 遍以对抗游戏全局购买冷却：
+    第一遍可能有卡被冷却吞掉，第二遍时冷却已过可以补上，
+    已购买的卡槽再次点击只是点空位，无副作用。
+    """
     if not hits:
         return
 
@@ -111,10 +117,14 @@ def click_cards(
         )
 
     original = _current_position()
-    for i, (card_x, card_y) in enumerate(targets):
-        _click_at(card_x, card_y, move_settle_ms, hold_ms, timing_jitter_ms)
-        if i < len(targets) - 1:
-            _sleep_ms(inter_click_ms, timing_jitter_ms)
+    for r in range(repeat_count):
+        for i, (card_x, card_y) in enumerate(targets):
+            _click_at(card_x, card_y, move_settle_ms, hold_ms, timing_jitter_ms)
+            if i < len(targets) - 1:
+                _sleep_ms(inter_click_ms, timing_jitter_ms)
+        # 两遍之间等待，让游戏消化前一轮购买
+        if r < repeat_count - 1:
+            _sleep_ms(repeat_gap_ms, timing_jitter_ms)
 
     # 恢复鼠标到原位
     _sleep_ms(post_batch_ms, timing_jitter_ms)

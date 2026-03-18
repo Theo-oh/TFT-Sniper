@@ -5,14 +5,13 @@
 
 # 当前生效阵容预设：preset1 / preset2 / preset3
 active_preset = "preset1"
-
 # 识别模式：
 # - "name"  = Vision OCR 识别英雄名
 # - "thumb" = 模板匹配识别拇指标记
 match_mode = "name"
 
 # Shift+D 后的固定等待时间（秒）
-animation_delay = 0.4
+animation_delay = 0.35
 
 # 连续按 Shift+D 的防抖冷却（秒）
 debounce_cooldown = 0.05
@@ -21,7 +20,7 @@ debounce_cooldown = 0.05
 debug = true
 
 [presets]
-preset1 = ["德莱厄斯", "德莱文", "斯维因", "希瓦娜", "塔里克", "费德提克", "斯卡纳", "塞拉斯", "奥恩", "千珏", "卢锡安与赛娜"]
+preset1 = ["德莱厄斯", "德莱文", "斯维因", "希瓦娜", "塔里克", "费德提克", "斯卡纳", "塞拉斯", "奥恩", "千珏", "卢锡安与赛娜", "干珏"]
 preset2 = ["洛里斯", "瑟庄妮", "蔚", "奥恩", "沃里克", "布隆", "艾希", "厄运小姐", "金克丝"]
 preset3 = ["塞拉斯"]
 
@@ -74,6 +73,11 @@ hold_ms = 18
 inter_click_ms = 70
 post_batch_ms = 18
 timing_jitter_ms = 4
+
+# 整批重复点击次数（对抗游戏全局购买冷却，提高多卡连买成功率）
+repeat_count = 2
+# 两遍之间的等待（毫秒），让游戏消化前一轮购买
+repeat_gap_ms = 30
 
 # 拇指标记检测配置
 # 当 match_mode = "thumb" 时启用

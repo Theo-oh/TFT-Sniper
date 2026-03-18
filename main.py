@@ -335,6 +335,8 @@ def process():
         inter_click_ms=_config.get("click", {}).get("inter_click_ms", 70),
         post_batch_ms=_config.get("click", {}).get("post_batch_ms", 18),
         timing_jitter_ms=_config.get("click", {}).get("timing_jitter_ms", 4),
+        repeat_count=_config.get("click", {}).get("repeat_count", 2),
+        repeat_gap_ms=_config.get("click", {}).get("repeat_gap_ms", 25),
     )
     for idx in hits:
         label = slots[idx].get("name", "") or "拇指标记"
