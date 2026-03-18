@@ -40,6 +40,12 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+如需后台运行时进程名显示为 `TFT-Sniper`（非必需）：
+
+```bash
+.venv/bin/pip install setproctitle
+```
+
 ## 配置思路
 
 项目只需要维护三类配置：

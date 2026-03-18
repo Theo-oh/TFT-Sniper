@@ -302,9 +302,16 @@ def main():
     print("  TFT-Sniper v0.1")
     print("=" * 40)
 
+    # 设置进程名，便于后台运行时识别
+    try:
+        import setproctitle
+        setproctitle.setproctitle("TFT-Sniper")
+    except ImportError:
+        pass
+
     # 加载模块（pyobjc 首次导入较慢）
     print("⏳ 加载模块...", end="", flush=True)
-    import logger, permissions, trigger
+    import permissions, trigger
     print(" ✅")
 
     # 权限检测

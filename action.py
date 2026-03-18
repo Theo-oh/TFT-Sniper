@@ -1,11 +1,9 @@
-"""鼠标控制模块 — 坐标计算 + 点击购买"""
+"""鼠标控制模块 — 直接使用 Quartz CGEvent 确保坐标一致"""
 
 import random
 import time
 
-from pynput.mouse import Button, Controller
-
-_mouse = Controller()
+import Quartz
 
 
 def _sleep_ms(delay_ms: int, jitter_ms: int = 0):
@@ -16,6 +14,12 @@ def _sleep_ms(delay_ms: int, jitter_ms: int = 0):
         actual_ms += random.randint(-jitter_ms, jitter_ms)
     if actual_ms > 0:
         time.sleep(actual_ms / 1000)
+
+
+def _current_position():
+    """读取当前鼠标位置，与 CGEventPost 同一坐标系"""
+    pos = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+    return pos.x, pos.y
 
 
 def _resolve_card_point(
@@ -48,11 +52,31 @@ def _click_at(
     hold_ms: int,
     timing_jitter_ms: int,
 ):
-    _mouse.position = (card_x, card_y)
+    """用 CGEvent 执行一次完整的 move → mouseDown → mouseUp。
+
+    三个事件共用同一个 CGPoint，确保坐标不会因时间窗口漂移。
+    """
+    point = Quartz.CGPointMake(card_x, card_y)
+
+    # 1. 移动鼠标到目标位置
+    move_event = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventMouseMoved, point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, move_event)
     _sleep_ms(move_settle_ms, timing_jitter_ms)
-    _mouse.press(Button.left)
+
+    # 2. 鼠标按下（使用同一个 point）
+    down_event = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseDown, point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, down_event)
     _sleep_ms(hold_ms, timing_jitter_ms)
-    _mouse.release(Button.left)
+
+    # 3. 鼠标释放（使用同一个 point）
+    up_event = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventLeftMouseUp, point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, up_event)
 
 
 def click_cards(
@@ -86,11 +110,16 @@ def click_cards(
             )
         )
 
-    original = _mouse.position
+    original = _current_position()
     for i, (card_x, card_y) in enumerate(targets):
         _click_at(card_x, card_y, move_settle_ms, hold_ms, timing_jitter_ms)
         if i < len(targets) - 1:
             _sleep_ms(inter_click_ms, timing_jitter_ms)
 
+    # 恢复鼠标到原位
     _sleep_ms(post_batch_ms, timing_jitter_ms)
-    _mouse.position = original
+    restore_point = Quartz.CGPointMake(original[0], original[1])
+    restore_event = Quartz.CGEventCreateMouseEvent(
+        None, Quartz.kCGEventMouseMoved, restore_point, 0
+    )
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, restore_event)
