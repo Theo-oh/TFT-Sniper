@@ -6,11 +6,6 @@
 # 当前生效阵容预设：preset1 / preset2 / preset3
 active_preset = "preset1"
 
-[presets]
-preset1 = ["千珏", "德莱文", "奥恩", "盖伦", "佛耶戈", "布里次"]
-preset2 = []
-preset3 = []
-
 # Shift+D 后的固定等待时间（秒）
 animation_delay = 0.4
 
@@ -19,6 +14,11 @@ debounce_cooldown = 0.05
 
 # 调试模式: 保存截图、打印 OCR 原文/置信度/耗时
 debug = true
+
+[presets]
+preset1 = ["德莱厄斯", "德莱文", "斯维因", "希瓦娜", "塔里克", "费德提克", "斯卡纳", "塞拉斯", "奥恩", "千珏", "卢锡安与赛娜"]
+preset2 = ["洛里斯", "瑟庄妮", "蔚", "奥恩", "沃里克", "布隆", "艾希", "厄运小姐", "金克丝"]
+preset3 = ["塞拉斯"]
 
 # 商店卡牌行的截图区域（Point 坐标，非像素）
 # 当 [window].enabled = false 时，这里是屏幕绝对坐标

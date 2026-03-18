@@ -56,12 +56,25 @@ def _recognize_items(cgimage, languages, min_text_height: float):
     return items
 
 
+def _cjk_count(text: str) -> int:
+    """统计文本里的 CJK 汉字数量。"""
+    return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+
+
 def _extract_name(text: str) -> str:
     """去掉 OCR 末尾可能粘上的价格数字，只保留英雄名。"""
     text = _normalize_text(text)
     if text.isdigit():
         return ""
-    return re.sub(r"\s*[0-9]+\s*$", "", text).strip()
+    text = re.sub(r"\s*[0-9]+\s*$", "", text).strip()
+    if _cjk_count(text) <= 0:
+        return ""
+    return text
+
+
+def _name_score(name: str, confidence: float):
+    """给候选英雄名打分，优先保留更像名字的结果。"""
+    return (_cjk_count(name), len(name), confidence)
 
 
 def recognize(cgimage):
@@ -87,6 +100,7 @@ def _parse(items):
     # 按 x 均分到 5 个卡槽
     slot_w = 1.0 / SLOT_COUNT
     slots = [{"name": ""} for _ in range(SLOT_COUNT)]
+    slot_scores = [(-1, -1, -1.0) for _ in range(SLOT_COUNT)]
 
     for item in items:
         text = item["text"]
@@ -99,6 +113,9 @@ def _parse(items):
             continue
 
         idx = min(int(item["cx"] / slot_w), SLOT_COUNT - 1)
-        slots[idx]["name"] = name
+        score = _name_score(name, confidence)
+        if score >= slot_scores[idx]:
+            slots[idx]["name"] = name
+            slot_scores[idx] = score
 
     return slots, raw_texts

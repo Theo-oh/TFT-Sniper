@@ -15,11 +15,29 @@ PRESET_NAMES = ("preset1", "preset2", "preset3")
 _config = {}
 
 
+def _normalize_config(config: dict) -> dict:
+    """兼容误写到 [presets] 下的顶层标量配置。"""
+    presets = config.get("presets", {})
+    if not isinstance(presets, dict):
+        return config
+
+    hoist_keys = ("animation_delay", "debounce_cooldown", "debug")
+    for key in hoist_keys:
+        if key in config:
+            continue
+        if key not in presets:
+            continue
+        config[key] = presets.pop(key)
+
+    return config
+
+
 def load_config() -> dict:
     """加载配置文件"""
     global _config
     with open(CONFIG_PATH, "rb") as f:
         _config = tomllib.load(f)
+    _config = _normalize_config(_config)
     logger.init(_config.get("debug", False))
     return _config
 
@@ -228,14 +246,27 @@ def process():
     slots, raw_texts = ocr.recognize(cgimage)
     t_ocr = time.perf_counter() - t2
 
-    if debug:
-        logger.debug(f"OCR 原始结果: {raw_texts}")
-        for i, s in enumerate(slots):
-            logger.debug(f"  卡槽{i + 1}: {{'name': {s['name']!r}}}")
-
     # 4. 匹配
-    _, heroes, _ = _resolve_target_heroes()
+    active_preset, heroes, _ = _resolve_target_heroes()
     hits = matcher.match(slots, heroes)
+
+    if debug:
+        hit_set = set(hits)
+        logger.debug(f"OCR 原始结果: {raw_texts}")
+        if active_preset:
+            logger.debug(f"当前预设: {active_preset} -> {heroes if heroes else '(空预设)'}")
+        else:
+            logger.debug(f"当前目标: {heroes if heroes else '(未配置)'}")
+        for i, s in enumerate(slots):
+            name = s["name"] or "(空)"
+            if not s["name"]:
+                action_text = "空槽"
+            elif i in hit_set:
+                action_text = "购买"
+            else:
+                action_text = "跳过"
+            logger.debug(f"  卡槽{i + 1}: {name} -> {action_text}")
+        logger.debug(f"命中卡槽: {[idx + 1 for idx in hits] if hits else '(无)'}")
 
     # 5. 点击（从右到左）
     action.click_cards(
