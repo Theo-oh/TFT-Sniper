@@ -6,6 +6,11 @@
 # 当前生效阵容预设：preset1 / preset2 / preset3
 active_preset = "preset1"
 
+# 识别模式：
+# - "name"  = Vision OCR 识别英雄名
+# - "thumb" = 模板匹配识别拇指标记
+match_mode = "name"
+
 # Shift+D 后的固定等待时间（秒）
 animation_delay = 0.4
 
@@ -69,3 +74,22 @@ hold_ms = 18
 inter_click_ms = 70
 post_batch_ms = 18
 timing_jitter_ms = 4
+
+# 拇指标记检测配置
+# 当 match_mode = "thumb" 时启用
+# 当 [window].enabled = true 时，下方坐标是相对窗口左上角的 Point
+# 推荐通过: .venv/bin/python calibrate.py --thumb 自动写入
+[thumb]
+template_path = "thumb_template.png"
+threshold = 0.42
+min_white_score = 0.25
+min_gray_score = 0.90
+search_padding = 6
+edge_tolerance = 1
+slot_regions = [
+  { left = 800, top = 1215, width = 24, height = 30 },
+  { left = 1083, top = 1217, width = 24, height = 30 },
+  { left = 1367, top = 1217, width = 24, height = 30 },
+  { left = 1649, top = 1215, width = 24, height = 30 },
+  { left = 1930, top = 1216, width = 24, height = 30 },
+]

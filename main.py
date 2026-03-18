@@ -11,6 +11,7 @@ import logger
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.toml")
 PRESET_NAMES = ("preset1", "preset2", "preset3")
+MATCH_MODES = {"name", "thumb"}
 
 _config = {}
 
@@ -84,14 +85,33 @@ def _resolve_target_heroes():
 
 def _print_config():
     active_preset, heroes, warning = _resolve_target_heroes()
+    match_mode, mode_warning = _resolve_match_mode()
     window_cfg = _config.get("window", {})
     click_cfg = _config.get("click", {})
     delay = float(_config.get("animation_delay", 0.42) or 0.42)
     if warning:
         logger.info(warning)
-    if active_preset:
-        logger.info(f"   当前预设: {active_preset}")
-    logger.info(f"   目标英雄: {heroes if heroes else '(未配置)'}")
+    if mode_warning:
+        logger.info(mode_warning)
+    logger.info(f"   匹配模式: {'英雄名 OCR' if match_mode == 'name' else '拇指标记'}")
+    if match_mode == "name":
+        if active_preset:
+            logger.info(f"   当前预设: {active_preset}")
+        logger.info(f"   目标英雄: {heroes if heroes else '(未配置)'}")
+    else:
+        logger.info("   目标英雄: (当前模式忽略预设，按拇指标记购买)")
+        logger.info(
+            f"   拇指阈值: {float(_config.get('thumb', {}).get('threshold', 0.45) or 0.45):.2f}"
+        )
+        logger.info(
+            f"   白手阈值: {float(_config.get('thumb', {}).get('min_white_score', 0.30) or 0.30):.2f}"
+        )
+        logger.info(
+            f"   灰度兜底: {float(_config.get('thumb', {}).get('min_gray_score', 0.90) or 0.90):.2f}"
+        )
+        logger.info(
+            f"   搜索余量: {int(_config.get('thumb', {}).get('search_padding', 6) or 6)}pt"
+        )
     if window_cfg.get("enabled", False):
         logger.info("   ROI 模式: 跟随金铲铲窗口")
     else:
@@ -113,6 +133,15 @@ def _target_bundle_id() -> str:
     """读取当前配置中的目标 bundle id。"""
     window_cfg = _config.get("window", {})
     return str(window_cfg.get("bundle_id", "") or "").strip()
+
+
+def _resolve_match_mode():
+    mode = str(_config.get("match_mode", "name") or "name").strip().lower()
+    if mode in MATCH_MODES:
+        return mode, None
+    fallback = "name"
+    warning = f"⚠️ match_mode={mode or '(未配置)'} 无效，本次回退到 {fallback}"
+    return fallback, warning
 
 
 def _set_active_preset_in_config(preset_name: str):
@@ -193,11 +222,12 @@ def sync_runtime_state(previous_bundle_id: str, previous_running: bool):
 
 
 def process():
-    """核心流程：等待动画 → 截图 → OCR → 匹配 → 点击"""
-    import capture, ocr, matcher, action, window
+    """核心流程：等待动画 → 识别 → 匹配 → 点击"""
+    import capture, ocr, matcher, action, thumb, window
 
     t0 = time.perf_counter()
     debug = _config.get("debug", False)
+    match_mode, mode_warning = _resolve_match_mode()
 
     # 1. 解算窗口内 ROI
     roi, click_y, target_window = window.resolve_geometry(_config)
@@ -205,6 +235,8 @@ def process():
         logger.info("⚠️ 未找到目标窗口，请检查 config.toml 的 [window] 配置")
         return
     click_targets, jitter, click_warning = window.resolve_click_targets(_config, target_window)
+    if mode_warning:
+        logger.info(mode_warning)
 
     if debug and target_window:
         logger.debug(
@@ -229,44 +261,65 @@ def process():
     time.sleep(delay)
     t_wait = delay
 
-    t1 = time.perf_counter()
-    cgimage = capture.grab(roi)
-    if cgimage is None:
-        logger.info("⚠️ 截图失败，请检查屏幕录制权限")
-        return
-    t_capture = time.perf_counter() - t1
-
-    # 调试：保存截图
-    if debug:
-        debug_path = os.path.join(os.path.dirname(CONFIG_PATH), "debug_capture.png")
-        capture.save(cgimage, debug_path)
-        logger.debug(f"截图已保存: {debug_path}")
-
-    # 3. OCR 识别
-    t2 = time.perf_counter()
-    slots, raw_texts = ocr.recognize(cgimage)
-    t_ocr = time.perf_counter() - t2
-
-    # 4. 匹配
     active_preset, heroes, _ = _resolve_target_heroes()
-    hits = matcher.match(slots, heroes)
+    t_capture = 0.0
+    t_recognize = 0.0
+    slots = []
+    raw_items = []
+
+    # thumb 模式刻意收敛在这一个分支里，便于后续整段移除或单独优化。
+    if match_mode == "thumb":
+        t1 = time.perf_counter()
+        slots, raw_items, thumb_warning = thumb.recognize(_config, target_window)
+        t_recognize = time.perf_counter() - t1
+        if thumb_warning:
+            logger.info(f"⚠️ {thumb_warning}")
+            return
+        hits = matcher.match(slots, heroes, mode=match_mode)
+    else:
+        t1 = time.perf_counter()
+        cgimage = capture.grab(roi)
+        if cgimage is None:
+            logger.info("⚠️ 截图失败，请检查屏幕录制权限")
+            return
+        t_capture = time.perf_counter() - t1
+
+        # 调试：保存截图
+        if debug:
+            debug_path = os.path.join(os.path.dirname(CONFIG_PATH), "debug_capture.png")
+            capture.save(cgimage, debug_path)
+            logger.debug(f"截图已保存: {debug_path}")
+
+        t2 = time.perf_counter()
+        slots, raw_items = ocr.recognize(cgimage)
+        t_recognize = time.perf_counter() - t2
+        hits = matcher.match(slots, heroes, mode=match_mode)
 
     if debug:
         hit_set = set(hits)
-        logger.debug(f"OCR 原始结果: {raw_texts}")
-        if active_preset:
-            logger.debug(f"当前预设: {active_preset} -> {heroes if heroes else '(空预设)'}")
+        if match_mode == "thumb":
+            logger.debug(f"拇指原始结果: {raw_items}")
+            for i, s in enumerate(slots):
+                action_text = "购买" if i in hit_set else "跳过"
+                logger.debug(
+                    f"  卡槽{i + 1}: thumb={'是' if s.get('thumb', False) else '否'} "
+                    f"score={s.get('thumb_score', 0.0):.3f} -> {action_text}"
+                )
         else:
-            logger.debug(f"当前目标: {heroes if heroes else '(未配置)'}")
-        for i, s in enumerate(slots):
-            name = s["name"] or "(空)"
-            if not s["name"]:
-                action_text = "空槽"
-            elif i in hit_set:
-                action_text = "购买"
+            logger.debug(f"OCR 原始结果: {raw_items}")
+            if active_preset:
+                logger.debug(f"当前预设: {active_preset} -> {heroes if heroes else '(空预设)'}")
             else:
-                action_text = "跳过"
-            logger.debug(f"  卡槽{i + 1}: {name} -> {action_text}")
+                logger.debug(f"当前目标: {heroes if heroes else '(未配置)'}")
+            for i, s in enumerate(slots):
+                name = s["name"] or "(空)"
+                if not s["name"]:
+                    action_text = "空槽"
+                elif i in hit_set:
+                    action_text = "购买"
+                else:
+                    action_text = "跳过"
+                logger.debug(f"  卡槽{i + 1}: {name} -> {action_text}")
         logger.debug(f"命中卡槽: {[idx + 1 for idx in hits] if hits else '(无)'}")
 
     # 5. 点击（从右到左）
@@ -284,16 +337,24 @@ def process():
         timing_jitter_ms=_config.get("click", {}).get("timing_jitter_ms", 4),
     )
     for idx in hits:
-        logger.hit(slots[idx]["name"], idx)
+        label = slots[idx].get("name", "") or "拇指标记"
+        logger.hit(label, idx)
 
     t_total = time.perf_counter() - t0
     if debug:
-        logger.debug(
-            f"耗时: 等待={t_wait * 1000:.1f}ms "
-            f"截图={t_capture * 1000:.1f}ms "
-            f"OCR={t_ocr * 1000:.1f}ms "
-            f"总计={t_total * 1000:.1f}ms"
-        )
+        if match_mode == "thumb":
+            logger.debug(
+                f"耗时: 等待={t_wait * 1000:.1f}ms "
+                f"Thumb={t_recognize * 1000:.1f}ms "
+                f"总计={t_total * 1000:.1f}ms"
+            )
+        else:
+            logger.debug(
+                f"耗时: 等待={t_wait * 1000:.1f}ms "
+                f"截图={t_capture * 1000:.1f}ms "
+                f"OCR={t_recognize * 1000:.1f}ms "
+                f"总计={t_total * 1000:.1f}ms"
+            )
     elif not hits:
         logger.info(f"未命中 ({t_total * 1000:.0f}ms)")
 

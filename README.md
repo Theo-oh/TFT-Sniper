@@ -6,7 +6,7 @@ macOS 上用于《金铲铲之战》的纯视觉辅助脚本。
 
 - 监听 `Shift+D`
 - 固定等待一段刷新动画时间
-- 截取商店文字带并用 Apple Vision 做 OCR
+- 识别商店卡槽中的目标信号
 - 命中目标后按手工标定的卡槽中心执行点击
 
 当前实现已经收敛为一条低维护主线：
@@ -14,7 +14,7 @@ macOS 上用于《金铲铲之战》的纯视觉辅助脚本。
 - 固定等待，不再保留自适应探针等待
 - ROI 和点击点位都支持跟随 `com.tencent.jkchess` 窗口移动
 - 点击位置使用手工标定的 5 个卡槽中心，而不是 ROI 五等分推算
-- 只按英雄名匹配，不再保留金币价格匹配分支
+- 支持两种可切换匹配模式：英雄名 OCR / 拇指标记模板匹配
 - 支持 3 套阵容预设和运行时热切换
 - 游戏未运行时自动待命，游戏启动后自动激活，退出后自动暂停
 
@@ -50,7 +50,7 @@ python3 -m venv .venv
 
 项目只需要维护三类配置：
 
-- 匹配条件：`active_preset`、`[presets]`
+- 匹配条件：`match_mode`、`active_preset`、`[presets]`、`[thumb]`
 - 固定等待：`animation_delay`
 - 几何信息：`[roi]`、`[window]`、`[click]`
 
@@ -58,6 +58,7 @@ python3 -m venv .venv
 
 | 字段 | 作用 |
 | --- | --- |
+| `match_mode` | 切换 `name` / `thumb` 两种识别模式 |
 | `active_preset` | 当前生效的阵容预设 |
 | `[presets]` | 3 套英雄名单 |
 | `animation_delay` | `Shift+D` 后固定等待多久再截图 |
@@ -65,6 +66,7 @@ python3 -m venv .venv
 | `[roi]` | 商店名称文字带的截图区域 |
 | `[window]` | 是否跟随 `com.tencent.jkchess` 窗口移动 |
 | `[click].slot_points` | 5 个卡槽的点击中心点 |
+| `[thumb]` | 拇指标记模板和 5 个检测区域 |
 | `[click]` 下的时序参数 | 多张连买时的点击节奏 |
 
 预设切换热键：
@@ -97,6 +99,31 @@ python3 -m venv .venv
 
 完成后会自动写回 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml)。
 
+如需校准拇指标记模式，先让商店里出现至少一张带拇指标记的卡，再运行：
+
+```bash
+.venv/bin/python calibrate.py --thumb
+```
+
+脚本会要求你依次记录：
+
+1. 一个可见拇指标记模板的左上角
+2. 同一个拇指标记模板的右下角
+3. 第 1 张卡的拇指中心
+4. 第 2 张卡的拇指中心
+5. 第 3 张卡的拇指中心
+6. 第 4 张卡的拇指中心
+7. 第 5 张卡的拇指中心
+
+完成后会：
+
+- 保存 [thumb_template.png](/Users/hh/Workspace/TFT-Sniper/thumb_template.png)
+- 写回 `[thumb].template_path`
+- 写回 `[thumb].slot_regions`
+- 保留可调参数：`[thumb].threshold`、`[thumb].min_white_score`、`[thumb].min_gray_score`、`[thumb].search_padding`
+
+然后把 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml) 的 `match_mode` 改成 `"thumb"`，按 `Cmd+Shift+R` 热重载即可切换。
+
 ## 运行
 
 ```bash
@@ -109,6 +136,7 @@ python3 -m venv .venv
 - 检测到 `com.tencent.jkchess` 后，`Shift+D` 才会生效
 - 游戏退出后，热键会自动暂停
 - `Shift+D`：执行一次固定等待 + 截图 + OCR + 点击
+- `match_mode = "thumb"` 时：执行一次固定等待 + 拇指模板匹配 + 点击
 - `Cmd+Option+1/2/3`：切换阵容预设
 - `Cmd+Shift+R`：热重载 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml)
 - `Ctrl+C`：退出
@@ -139,6 +167,9 @@ python3 -m venv .venv
 - 稳定优先：把 `animation_delay` 设到你这台机器上不会截到旧商店的最小值
 - 多张连买偶发漏点：优先增大 `inter_click_ms`，其次增大 `hold_ms`
 - 点位不准：重新运行 [calibrate.py](/Users/hh/Workspace/TFT-Sniper/calibrate.py)
+- 拇指偶发漏判：优先重新运行 `calibrate.py --thumb`，其次增大 `[thumb].search_padding`
+- 白手高光偶发丢失：可以降低 `[thumb].min_gray_score`，让高灰度模板命中兜底生效
+- 拇指偶发误判：优先提高 `[thumb].min_white_score`，其次提高 `[thumb].threshold`
 - 调试完成后把 `debug = false`，减少磁盘写入和日志噪声
 
 ## 项目结构
@@ -157,6 +188,7 @@ TFT-Sniper/
 ├── install_launch_agent.py
 ├── permissions.py
 ├── logger.py
+├── thumb.py
 └── requirements.txt
 ```
 
@@ -167,7 +199,8 @@ TFT-Sniper/
 - [window.py](/Users/hh/Workspace/TFT-Sniper/window.py)：窗口定位和相对坐标解算
 - [capture.py](/Users/hh/Workspace/TFT-Sniper/capture.py)：Quartz 截图
 - [ocr.py](/Users/hh/Workspace/TFT-Sniper/ocr.py)：Vision OCR 和英雄名解析
-- [matcher.py](/Users/hh/Workspace/TFT-Sniper/matcher.py)：按英雄名命中判断
+- [thumb.py](/Users/hh/Workspace/TFT-Sniper/thumb.py)：拇指标记模板匹配
+- [matcher.py](/Users/hh/Workspace/TFT-Sniper/matcher.py)：按模式产生命中卡槽
 - [action.py](/Users/hh/Workspace/TFT-Sniper/action.py)：批量点击
 - [calibrate.py](/Users/hh/Workspace/TFT-Sniper/calibrate.py)：ROI 和点击点位校准
 - [install_launch_agent.py](/Users/hh/Workspace/TFT-Sniper/install_launch_agent.py)：安装登录自启的 LaunchAgent
