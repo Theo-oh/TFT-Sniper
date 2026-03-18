@@ -17,7 +17,7 @@ animation_delay = 0.35
 debounce_cooldown = 0.05
 
 # 调试模式: 保存截图、打印 OCR 原文/置信度/耗时
-debug = true
+debug = false
 
 [presets]
 preset1 = ["德莱厄斯", "德莱文", "斯维因", "希瓦娜", "塔里克", "费德提克", "斯卡纳", "塞拉斯", "奥恩", "千珏", "卢锡安与赛娜", "干珏"]

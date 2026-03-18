@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 debug_capture.png
 thumb_template.png
+.tft-sniper.lock

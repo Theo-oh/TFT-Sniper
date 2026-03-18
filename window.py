@@ -66,6 +66,18 @@ def is_app_running(bundle_id: str) -> bool:
     return bool(apps)
 
 
+def is_app_frontmost(bundle_id: str) -> bool:
+    """检查目标 bundle id 的应用是否在最前台。"""
+    bundle_id = str(bundle_id or "").strip()
+    if not bundle_id:
+        return False
+
+    apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+    if not apps:
+        return False
+    return bool(apps[0].isActive())
+
+
 def find_window(window_cfg: dict):
     """按 bundle id 查找目标窗口，优先返回面积最大的匹配结果。"""
     windows = Quartz.CGWindowListCopyWindowInfo(

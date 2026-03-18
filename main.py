@@ -1,11 +1,19 @@
 """TFT-Sniper 入口 — 权限检测 → 加载配置 → 监听 → 识别 → 点击"""
 
+import fcntl
 import os
 import queue
 import re
 import sys
 import time
 import tomllib
+import traceback
+
+# LaunchAgent 下 stdout 非 tty，Python 默认块缓冲；强制行缓冲确保日志及时刷出
+if not sys.stdout.isatty():
+    sys.stdout.reconfigure(line_buffering=True)
+if not sys.stderr.isatty():
+    sys.stderr.reconfigure(line_buffering=True)
 
 import logger
 
@@ -47,6 +55,7 @@ def reload_config():
     """热重载配置"""
     try:
         load_config()
+        logger.info("─" * 30)
         logger.info("✅ 配置已重载")
         _print_config()
     except Exception as e:
@@ -188,8 +197,8 @@ def switch_preset(slot: int):
         logger.info(f"❌ 阵容切换失败: {e}")
 
 
-def sync_runtime_state(previous_bundle_id: str, previous_running: bool):
-    """同步金铲铲运行状态，并按需切换热键启用状态。"""
+def sync_runtime_state(previous_bundle_id: str, previous_frontmost: bool):
+    """同步金铲铲前台状态，并按需切换热键启用状态。"""
     import trigger, window
 
     bundle_id = _target_bundle_id()
@@ -199,20 +208,23 @@ def sync_runtime_state(previous_bundle_id: str, previous_running: bool):
             return bundle_id, True, "ℹ️ 未配置 bundle_id，Shift+D 将始终可用"
         return bundle_id, True, None
 
-    running = window.is_app_running(bundle_id)
-    trigger.set_enabled(running)
+    frontmost = window.is_app_frontmost(bundle_id)
+    trigger.set_enabled(frontmost)
 
     if bundle_id != previous_bundle_id:
+        if frontmost:
+            return bundle_id, frontmost, f"🎮 {bundle_id} 在前台，热键已激活"
+        running = window.is_app_running(bundle_id)
         if running:
-            return bundle_id, running, f"🎮 已检测到 {bundle_id}，热键已激活"
-        return bundle_id, running, f"⏳ 等待 {bundle_id} 启动，热键暂未激活"
+            return bundle_id, frontmost, f"⏳ {bundle_id} 在后台，热键暂未激活"
+        return bundle_id, frontmost, f"⏳ 等待 {bundle_id} 启动，热键暂未激活"
 
-    if running != previous_running:
-        if running:
-            return bundle_id, running, "🎮 检测到金铲铲已启动，热键已激活"
-        return bundle_id, running, "⏸ 金铲铲已退出，热键已暂停"
+    if frontmost != previous_frontmost:
+        if frontmost:
+            return bundle_id, frontmost, "🎮 金铲铲已切到前台，热键已激活"
+        return bundle_id, frontmost, "⏸ 金铲铲已离开前台，热键已暂停"
 
-    return bundle_id, running, None
+    return bundle_id, frontmost, None
 
 
 def process():
@@ -355,9 +367,32 @@ def process():
         logger.info(f"未命中 ({t_total * 1000:.0f}ms)")
 
 
+_lock_file = None
+
+
+def _acquire_lock():
+    """防止多实例同时运行。"""
+    global _lock_file
+    lock_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tft-sniper.lock")
+    _lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file.write(str(os.getpid()))
+        _lock_file.flush()
+    except OSError:
+        print("❌ 另一个 TFT-Sniper 实例正在运行，退出")
+        sys.exit(1)
+
+
+# 前台状态轮询间隔（秒）
+_STATE_POLL_INTERVAL = 5.0
+
+
 def main():
+    _acquire_lock()
+
     print("=" * 40)
-    print("  TFT-Sniper v0.1")
+    print(f"  TFT-Sniper v0.1  (PID {os.getpid()})")
     print("=" * 40)
 
     # 设置进程名，便于后台运行时识别
@@ -392,30 +427,37 @@ def main():
     task_queue = trigger.start()
 
     bundle_id = ""
-    game_running = True
+    game_frontmost = True
+    last_state_check = 0.0
 
     logger.info(
         "🎮 已启动，Shift+D 刷新识别，Cmd+Option+1/2/3 切换预设，"
         "Cmd+Shift+R 重载配置，Ctrl+C 退出"
     )
-    bundle_id, game_running, state_message = sync_runtime_state(bundle_id, game_running)
+    bundle_id, game_frontmost, state_message = sync_runtime_state(bundle_id, game_frontmost)
     if state_message:
         logger.info(state_message)
+    last_state_check = time.monotonic()
     print()
 
     try:
         while True:
-            bundle_id, game_running, state_message = sync_runtime_state(bundle_id, game_running)
-            if state_message:
-                logger.info(state_message)
+            now = time.monotonic()
+            if now - last_state_check >= _STATE_POLL_INTERVAL:
+                bundle_id, game_frontmost, state_message = sync_runtime_state(
+                    bundle_id, game_frontmost
+                )
+                if state_message:
+                    logger.info(state_message)
+                last_state_check = now
 
             try:
-                task_queue.get(timeout=0.5)  # 等待 Shift+D，同时周期性同步游戏状态
+                task_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
 
-            if bundle_id and not game_running:
-                logger.info("⚠️ 金铲铲未运行，本次触发已忽略")
+            if bundle_id and not game_frontmost:
+                logger.info("⚠️ 金铲铲不在前台，本次触发已忽略")
                 continue
             process()
     except KeyboardInterrupt:
@@ -423,4 +465,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        sys.exit(1)
