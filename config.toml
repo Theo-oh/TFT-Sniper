@@ -8,7 +8,7 @@ active_preset = "preset1"
 # 识别模式：
 # - "name"  = Vision OCR 识别英雄名
 # - "thumb" = 模板匹配识别拇指标记
-match_mode = "name"
+match_mode = "thumb"
 
 # Shift+D 后的固定等待时间（秒）
 animation_delay = 0.35
@@ -85,15 +85,12 @@ repeat_gap_ms = 30
 # 推荐通过: .venv/bin/python calibrate.py --thumb 自动写入
 [thumb]
 template_path = "thumb_template.png"
-threshold = 0.42
-min_white_score = 0.25
-min_gray_score = 0.90
+threshold = 0.60
 search_padding = 6
-edge_tolerance = 1
 slot_regions = [
-  { left = 800, top = 1215, width = 24, height = 30 },
-  { left = 1083, top = 1217, width = 24, height = 30 },
-  { left = 1367, top = 1217, width = 24, height = 30 },
-  { left = 1649, top = 1215, width = 24, height = 30 },
-  { left = 1930, top = 1216, width = 24, height = 30 },
+  { left = 798, top = 1213, width = 31, height = 37 },
+  { left = 1077, top = 1212, width = 31, height = 37 },
+  { left = 1361, top = 1213, width = 31, height = 37 },
+  { left = 1644, top = 1211, width = 31, height = 37 },
+  { left = 1927, top = 1212, width = 31, height = 37 },
 ]

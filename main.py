@@ -101,13 +101,7 @@ def _print_config():
     else:
         logger.info("   目标英雄: (当前模式忽略预设，按拇指标记购买)")
         logger.info(
-            f"   拇指阈值: {float(_config.get('thumb', {}).get('threshold', 0.45) or 0.45):.2f}"
-        )
-        logger.info(
-            f"   白手阈值: {float(_config.get('thumb', {}).get('min_white_score', 0.30) or 0.30):.2f}"
-        )
-        logger.info(
-            f"   灰度兜底: {float(_config.get('thumb', {}).get('min_gray_score', 0.90) or 0.90):.2f}"
+            f"   拇指阈值: {float(_config.get('thumb', {}).get('threshold', 0.70) or 0.70):.2f}"
         )
         logger.info(
             f"   搜索余量: {int(_config.get('thumb', {}).get('search_padding', 6) or 6)}pt"

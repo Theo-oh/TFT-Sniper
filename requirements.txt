@@ -1,3 +1,5 @@
 pyobjc-framework-Vision
 pyobjc-framework-Quartz
 pynput
+opencv-python-headless
+numpy
