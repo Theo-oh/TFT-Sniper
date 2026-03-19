@@ -120,7 +120,9 @@ python3 -m venv .venv
 - 保存 [thumb_template.png](/Users/hh/Workspace/TFT-Sniper/thumb_template.png)
 - 写回 `[thumb].template_path`
 - 写回 `[thumb].slot_regions`
-- 保留可调参数：`[thumb].threshold`、`[thumb].min_white_score`、`[thumb].min_gray_score`、`[thumb].search_padding`
+- 保留可调参数：`[thumb].threshold`、`[thumb].search_padding`
+
+如果模板截图质量太差，二值化后可能退化成纯黑或纯白图；运行时会拒绝继续匹配，并提示重新执行 `calibrate.py --thumb`。
 
 然后把 [config.toml](/Users/hh/Workspace/TFT-Sniper/config.toml) 的 `match_mode` 改成 `"thumb"`，按 `Cmd+Shift+R` 热重载即可切换。
 
@@ -168,8 +170,8 @@ python3 -m venv .venv
 - 多张连买偶发漏点：优先增大 `inter_click_ms`，其次增大 `hold_ms`
 - 点位不准：重新运行 [calibrate.py](/Users/hh/Workspace/TFT-Sniper/calibrate.py)
 - 拇指偶发漏判：优先重新运行 `calibrate.py --thumb`，其次增大 `[thumb].search_padding`
-- 白手高光偶发丢失：可以降低 `[thumb].min_gray_score`，让高灰度模板命中兜底生效
-- 拇指偶发误判：优先提高 `[thumb].min_white_score`，其次提高 `[thumb].threshold`
+- 拇指模板报“二值化后变成纯黑/纯白”：说明模板截图质量不够，优先重新运行 `calibrate.py --thumb`
+- 拇指偶发误判：优先提高 `[thumb].threshold`
 - 调试完成后把 `debug = false`，减少磁盘写入和日志噪声
 
 ## 项目结构

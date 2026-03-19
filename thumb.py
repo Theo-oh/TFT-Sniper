@@ -14,6 +14,7 @@ import capture
 SLOT_COUNT = 5
 DEFAULT_THRESHOLD = 0.60
 DEFAULT_SEARCH_PADDING = 6
+BINARY_THRESHOLD = 200
 _TEMPLATE_CACHE = {"path": "", "mtime": None, "image": None}
 
 
@@ -68,14 +69,14 @@ def _resolve_regions(config: dict, target_window=None):
 def _cgimage_to_cv2(cgimage):
     if cgimage is None:
         return None
-        
+
     width = int(Quartz.CGImageGetWidth(cgimage) or 0)
     height = int(Quartz.CGImageGetHeight(cgimage) or 0)
     bytes_per_row = int(Quartz.CGImageGetBytesPerRow(cgimage) or 0)
     provider = Quartz.CGImageGetDataProvider(cgimage)
     if not provider:
         return None
-        
+
     data = Quartz.CGDataProviderCopyData(provider)
     if not data:
         return None
@@ -84,12 +85,19 @@ def _cgimage_to_cv2(cgimage):
     buf = np.frombuffer(data, dtype=np.uint8)
     image_2d = buf.reshape((height, bytes_per_row // 4, 4))
     image_2d = image_2d[:, :width, :]
-    
+
     # 转由 CGImage 产出的原生 BGRA 到单通道灰度
     gray = cv2.cvtColor(image_2d, cv2.COLOR_BGRA2GRAY)
     # 全局二值化：抛弃金色/杂色背景，只保留亮度>200的纯白高亮标记体
-    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(gray, BINARY_THRESHOLD, 255, cv2.THRESH_BINARY)
     return binary
+
+
+def _is_degenerate_binary(image) -> bool:
+    """常量模板会让 TM_CCOEFF_NORMED 退化成满分误判，必须提前拦截。"""
+    white_pixels = int(cv2.countNonZero(image))
+    total_pixels = int(image.size)
+    return white_pixels == 0 or white_pixels == total_pixels
 
 
 def _load_template_cv2(path: str):
@@ -112,7 +120,9 @@ def _load_template_cv2(path: str):
         return None, f"无法读取拇指模板: {path}"
 
     # 同样对模板进行二值化处理
-    _, tpl_binary = cv2.threshold(tpl, 200, 255, cv2.THRESH_BINARY)
+    _, tpl_binary = cv2.threshold(tpl, BINARY_THRESHOLD, 255, cv2.THRESH_BINARY)
+    if _is_degenerate_binary(tpl_binary):
+        return None, "拇指模板二值化后变成纯黑/纯白，无法安全匹配，请重新运行 calibrate.py --thumb"
 
     _TEMPLATE_CACHE["path"] = path
     _TEMPLATE_CACHE["mtime"] = mtime
@@ -134,6 +144,48 @@ def _expand_region(region: dict, padding: int):
         "width": max(1, right - left),
         "height": max(1, bottom - top),
     }
+
+
+def _union_regions(regions):
+    left = min(region["left"] for region in regions)
+    top = min(region["top"] for region in regions)
+    right = max(region["left"] + region["width"] for region in regions)
+    bottom = max(region["top"] + region["height"] for region in regions)
+    return {
+        "left": left,
+        "top": top,
+        "width": max(1, right - left),
+        "height": max(1, bottom - top),
+    }
+
+
+def _slice_binary_region(binary_image, source_region: dict, target_region: dict):
+    image_height, image_width = binary_image.shape[:2]
+    scale_x = image_width / max(1, source_region["width"])
+    scale_y = image_height / max(1, source_region["height"])
+
+    x0 = int(round((target_region["left"] - source_region["left"]) * scale_x))
+    y0 = int(round((target_region["top"] - source_region["top"]) * scale_y))
+    x1 = int(
+        round(
+            (target_region["left"] + target_region["width"] - source_region["left"])
+            * scale_x
+        )
+    )
+    y1 = int(
+        round(
+            (target_region["top"] + target_region["height"] - source_region["top"])
+            * scale_y
+        )
+    )
+
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(image_width, x1)
+    y1 = min(image_height, y1)
+    if x0 >= x1 or y0 >= y1:
+        return None
+    return binary_image[y0:y1, x0:x1]
 
 
 def recognize(config: dict, target_window=None):
@@ -161,11 +213,15 @@ def recognize(config: dict, target_window=None):
 
     slots = _empty_slots()
     raw_items = []
+    expanded_regions = [_expand_region(region, search_padding) for region in regions]
+    capture_region = _union_regions(expanded_regions)
+    capture_binary = _cgimage_to_cv2(capture.grab(capture_region))
 
-    for idx, region in enumerate(regions):
-        cgimage = capture.grab(_expand_region(region, search_padding))
-        sample_img = _cgimage_to_cv2(cgimage)
-        
+    for idx, sample_region in enumerate(expanded_regions):
+        if capture_binary is None:
+            raw_items.append(f"slot{idx + 1}: capture_failed")
+            continue
+        sample_img = _slice_binary_region(capture_binary, capture_region, sample_region)
         if sample_img is None:
             raw_items.append(f"slot{idx + 1}: capture_failed")
             continue
@@ -178,7 +234,7 @@ def recognize(config: dict, target_window=None):
             continue
 
         res = cv2.matchTemplate(sample_img, tpl_img, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
 
         hit = max_val >= threshold
         slots[idx]["thumb"] = hit

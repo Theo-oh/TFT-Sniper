@@ -227,6 +227,18 @@ def sync_runtime_state(previous_bundle_id: str, previous_frontmost: bool):
     return bundle_id, frontmost, None
 
 
+def _emit_runtime_state_message(message: str):
+    if not message:
+        return
+
+    if message in ("🎮 金铲铲已切到前台，热键已激活", "⏸ 金铲铲已离开前台，热键已暂停"):
+        if _config.get("debug", False):
+            logger.debug(message)
+        return
+
+    logger.info(message)
+
+
 def process():
     """核心流程：等待动画 → 识别 → 匹配 → 点击"""
     import capture, ocr, matcher, action, thumb, window
@@ -435,8 +447,7 @@ def main():
         "Cmd+Shift+R 重载配置，Ctrl+C 退出"
     )
     bundle_id, game_frontmost, state_message = sync_runtime_state(bundle_id, game_frontmost)
-    if state_message:
-        logger.info(state_message)
+    _emit_runtime_state_message(state_message)
     last_state_check = time.monotonic()
     print()
 
@@ -447,8 +458,7 @@ def main():
                 bundle_id, game_frontmost, state_message = sync_runtime_state(
                     bundle_id, game_frontmost
                 )
-                if state_message:
-                    logger.info(state_message)
+                _emit_runtime_state_message(state_message)
                 last_state_check = now
 
             try:
